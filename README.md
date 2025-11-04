@@ -6,6 +6,39 @@ This project implements physics-informed graph neural networks (GNNs) to improve
 
 Optimal power flow (OPF) is a fundamental problem in power systems engineering, aiming to determine the most efficient operating conditions while satisfying physical and operational constraints. Traditional methods can be computationally intensive and may not fully leverage the underlying grid topology and physics. This project integrates physics-based regularization into GNN architectures to enforce Kirchhoff’s laws and power balance constraints, enhancing model reliability and generalization. The goal is to develop scalable, interpretable models that can assist in real-time power grid management.
 
+## Setup Instructions
+
+1. Install `uv` if not already installed:
+
+   ```bash
+   pip install uv
+   ```
+
+2. Create a new virtual environment:
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   ```
+
+3. Synchronize dependencies and install requirements:
+
+   ```bash
+   uv sync
+   ```
+
+4. You are now ready to run experiments.
+
+## Running an Experiment
+
+To launch a training run with the default GraphSAGE configuration, use:
+
+```bash
+uv run src/experiments/run_experiment.py --config src/config/graphsage.yaml
+```
+
+This command starts training with physics-informed regularization enabled and logs results for analysis.
+
 ## Repository Structure
 
 ```
@@ -77,39 +110,6 @@ powerflow-gnn/
     ├── train_graphsage.sh        # CLI run for reproducibility
     └── evaluate_model.sh
 ```
-
-## Setup Instructions
-
-1. Install `uv` if not already installed:
-
-   ```bash
-   pip install uv
-   ```
-
-2. Create a new virtual environment:
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. Synchronize dependencies and install requirements:
-
-   ```bash
-   uv sync
-   ```
-
-4. You are now ready to run experiments.
-
-## Running an Experiment
-
-To launch a training run with the default GraphSAGE configuration, use:
-
-```bash
-uv run src/experiments/run_experiment.py --config src/config/graphsage.yaml
-```
-
-This command starts training with physics-informed regularization enabled and logs results for analysis.
 
 ## Credits
 
