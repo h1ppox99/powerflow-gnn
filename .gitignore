@@ -1,2 +1,3 @@
 # Git ignore patterns for the powerflow-gnn project
-
+.DS_Store
+.venv/
