@@ -1,2 +1,21 @@
 # Default hyperparameters and paths
 
+model:
+  name: graphsage_pi
+  in_dim: 8       # placeholder; adjust once data lands
+  hidden: 128
+  out_dim: 4
+  num_layers: 3
+  dropout: 0.1
+  agg: mean
+
+train:
+  epochs: 20
+  lr: 1e-3
+  weight_decay: 0.0
+  batch_size: 16
+
+data:
+  backend: powergraph   
+  grid: IEEE118
+  task: opf
