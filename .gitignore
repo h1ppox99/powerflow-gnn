@@ -1,3 +1,8 @@
 # Git ignore patterns for the powerflow-gnn project
 .DS_Store
 .venv/
+.pytest_cache/
+__pycache__/
+data/raw
+output/
+.python-version

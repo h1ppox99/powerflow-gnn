@@ -29,6 +29,15 @@ Optimal power flow (OPF) is a fundamental problem in power systems engineering, 
 
 4. You are now ready to run experiments.
 
+## Dataset
+
+The repository ships with the PowerGraph benchmark installed under `data/raw`.
+Each dataset follows the `<dataset_name>/raw` layout from the original Figshare
+release ([PowerGraph](https://figshare.com/articles/dataset/PowerGraph/22820534?file=50081700)).
+The helper utilities in `data/utils_data.py` expose convenience functions to
+list the available datasets or instantiate the `PowerGrid` PyG dataset wrapper
+without hard-coded paths.
+
 ## Running an Experiment
 
 To launch a training run with the default GraphSAGE configuration, use:
