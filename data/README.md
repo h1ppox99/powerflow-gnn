@@ -7,7 +7,7 @@ the project. The expected structure is:
 data/
 ├── README.md                 # This guide
 ├── raw/                      # Original Figshare archive contents
-│   ├── <dataset>/raw/        # e.g. ieee118/raw, uk/raw, texas/raw, ...
+│   ├── <dataset>/<dataset>/raw/        # e.g. ieee118/ieee118/raw, uk/uk/raw, texas/texas/raw, ...
 │   └── README.md             # Source reference
 ├── prepare_data/               # PyTorch Geometric dataset implementation
 │   └── powergrid.py          # PowerGrid InMemoryDataset loader
@@ -18,7 +18,7 @@ data/
 
 Each dataset extracted from the Figshare archive must live under `data/raw` and
 keep its original folder structure. For example, the IEEE 118-node benchmark
-should be located at `data/raw/ieee118/raw/` and contain files such as
+should be located at `data/raw/ieee118/ieee118/raw/` and contain files such as
 `edge_index.mat`, `edge_attr.mat`, `X.mat`, `Y_polar.mat`, etc. No absolute
 paths are needed; the helper utilities automatically discover the correct root.
 

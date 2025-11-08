@@ -19,14 +19,16 @@ def discover_powergraph_root(base_path: str | Path | None = None) -> Path:
     """
 
     base = Path(base_path) if base_path is not None else Path(__file__).resolve().parent.parent
+
     candidates = [base] + [p for p in base.iterdir() if p.is_dir()]
+
 
     for candidate in candidates:
         try:
             subdirs = [d for d in candidate.iterdir() if d.is_dir()]
         except PermissionError:
             continue
-        if any((subdir / "raw").is_dir() for subdir in subdirs):
+        if any((subdir /subdir.name/ "raw").is_dir() for subdir in subdirs):
             return candidate
 
     raise FileNotFoundError(
