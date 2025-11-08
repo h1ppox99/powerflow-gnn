@@ -13,7 +13,7 @@ def list_available_powergraph_datasets(root: str | Path | None = None) -> list[s
     return sorted(
         entry.name
         for entry in root_path.iterdir()
-        if entry.is_dir() and (entry / "raw").is_dir()
+        if entry.is_dir() and (entry /entry.name/ "raw").is_dir()
     )
 
 

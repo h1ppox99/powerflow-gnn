@@ -46,7 +46,7 @@ wget -O data.tar.gz "https://figshare.com/ndownloader/files/46619152"
 tar -xf data.tar.gz
 rm data.tar.gz
 ```
-
+Or one can download the dataset "dataset_pf_opf.zip" from (https://figshare.com/articles/dataset/PowerGraph/22820534) and unzip it under `data/raw/`.
 ## Running an Experiment
 
 To launch a training run with the default GraphSAGE configuration, use:
