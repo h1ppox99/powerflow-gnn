@@ -53,7 +53,7 @@ class PowerGrid(InMemoryDataset):
 
     @property
     def raw_dir(self) -> str:
-        return str(self._root / self.name / "raw")
+        return str(self._root / self.name/ self.name / "raw") # when unzipping, the name appears twice
 
     @property
     def processed_dir(self) -> str:
