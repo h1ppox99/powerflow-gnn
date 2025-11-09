@@ -47,7 +47,7 @@ dependencies = [
     "torchaudio==2.1.0+cu121",
     "torchvision==0.16.0+cu121",
     "tqdm==4.67.1",
-    "triton==2.1.0",
+    "triton==2.1.0; sys_platform == 'linux'",
     "typing-extensions==4.15.0",
     "urllib3==2.5.0",
     "xxhash==3.6.0",
@@ -57,6 +57,15 @@ dependencies = [
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
+
+environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'win32'",
+    "sys_platform == 'darwin'",  # Add macOS
+]
+override-dependencies = [
+    "triton==2.1.0; sys_platform == 'linux'",
+]
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
