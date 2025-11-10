@@ -1,6 +1,6 @@
 # Physics-Informed GNN for Optimal Power Flow
 
-This project implements physics-informed graph neural networks (GNNs) to improve the accuracy and interpretability of optimal power flow solutions in electrical grids.
+This project implements physics-informed graph neural networks (GNNs) to improve the accuracy and interpretability of optimal power flow solutions in electrical grids. A more detailed presentation can be found at docs/Project_Proposal/pdf .
 
 ## Overview
 
