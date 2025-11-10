@@ -17,6 +17,7 @@ TODO :
 
 - Adjust losses scripts
 - Train models
+- Adjust hyperparameters
 
 ## Setup Instructions
 
