@@ -7,14 +7,17 @@ from pathlib import Path
 
 def load_dataset(cfg):
     if cfg["data"]["backend"] == "synthetic":
-        # from src.data.synthetic_powergraph import make_synthetic_dataset
-        # return make_synthetic_dataset(num_graphs=200, n=60, f_in=cfg["model"]["in_dim"])
-        raise NotImplementedError("Synthetic dataset not yet implemented.")
+        from data.prepare_data import SyntheticPowerGrid
+        return SyntheticPowerGrid(
+            num_graphs=cfg["data"].get("num_graphs", 100),
+            n=cfg["data"].get("n", 60),
+            f_in=cfg["model"].get("in_dim", 16)
+        )
     else:
         # Import your PowerGraph dataset
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
-        from prepare_data import PowerGrid, discover_powergraph_root
+        from data.prepare_data import PowerGrid, discover_powergraph_root
         print("[Debug] Discovering PowerGraph root...")
         
         root = discover_powergraph_root()
@@ -23,6 +26,34 @@ def load_dataset(cfg):
             name=cfg["data"]["grid"],
             datatype=cfg["data"].get("task", "nodeopf")
         )
+
+def load_model(cfg: dict, dataset):
+    """Load the model based on the configuration and dataset.
+
+    Args:
+        cfg (dict): Configuration dictionary.
+        dataset (InMemoryDataset): The dataset to be used for training. 
+
+    Raises:
+        ValueError: If the model name is unknown.
+
+    Returns:
+        _type_: torch.nn.Module instance of the model.
+    """
+    if cfg["model"]["name"] == "graphsage_pi":
+        data = dataset[0]  # Assuming dataset is an InMemoryDataset
+        in_dim = data.x.size(-1)
+        out_dim = data.y.size(-1)
+        return GraphSAGE_PI(
+            in_dim=in_dim,
+            hidden_dim=cfg["model"]["hidden"],
+            out_dim=out_dim,
+            num_layers=cfg["model"]["num_layers"],
+            dropout=cfg["model"]["dropout"],
+            aggr=cfg["model"]["agg"]
+        )
+    else:
+        raise ValueError(f"Unknown model name: {cfg['model']['name']}")
 
 def main():
     ap = argparse.ArgumentParser()
@@ -35,11 +66,7 @@ def main():
     print("[Debug] Loading dataset...")
     dataset = load_dataset(cfg)
     print(f"[Debug] Dataset loaded with {len(dataset)} graphs.")
-    mcfg = cfg["model"]
-    model = GraphSAGE_PI(
-        in_dim=mcfg["in_dim"], hidden=mcfg["hidden"], out_dim=mcfg["out_dim"],
-        num_layers=mcfg["num_layers"], dropout=mcfg["dropout"], agg=mcfg["agg"]
-    )
+    model = load_model(cfg, dataset)
     print("[Debug] Model initialized")
     fit(model, dataset, cfg)
 
