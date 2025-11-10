@@ -11,7 +11,7 @@ model:
 
 train:
   epochs: 20
-  lr: 1e-3
+  lr: !!float 1e-3
   weight_decay: 0.0
   batch_size: 16
 

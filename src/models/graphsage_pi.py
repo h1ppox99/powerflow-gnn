@@ -29,7 +29,7 @@ class GraphSAGE_PI(nn.Module):
 
         dims = [in_dim] + [hidden_dim] * (num_layers - 1)
         self.convs = nn.ModuleList(
-            SAGEConv(dims[i], dims[i + 1], aggr=aggr) for i in range(len(dims) - 1)
+            SAGEConv(dims[i], dims[i + 1], aggr=aggr) for i in range(len(dims) - 1) # TODO: SAGEConv ne prend pas en compte les edge attributes, il faut faire un autre modèle qui gère ça.
         )
         self.norms = nn.ModuleList(
             nn.LayerNorm(dims[i + 1]) if use_layer_norm else nn.Identity()

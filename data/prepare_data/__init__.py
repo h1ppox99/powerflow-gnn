@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from .powergrid import PowerGrid
+from .synthetic_data import SyntheticPowerGrid
 
-__all__ = ["PowerGrid", "discover_powergraph_root"]
+__all__ = ["PowerGrid", "SyntheticPowerGrid", "discover_powergraph_root"]
 
 
 def discover_powergraph_root(base_path: str | Path | None = None) -> Path:

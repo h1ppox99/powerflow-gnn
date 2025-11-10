@@ -18,7 +18,6 @@ def load_dataset(cfg):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "data"))
         from data.prepare_data import PowerGrid, discover_powergraph_root
-        print("[Debug] Discovering PowerGraph root...")
         
         root = discover_powergraph_root()
         return PowerGrid(
@@ -63,11 +62,8 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    print("[Debug] Loading dataset...")
     dataset = load_dataset(cfg)
-    print(f"[Debug] Dataset loaded with {len(dataset)} graphs.")
     model = load_model(cfg, dataset)
-    print("[Debug] Model initialized")
     fit(model, dataset, cfg)
 
 if __name__ == "__main__":
