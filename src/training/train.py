@@ -14,7 +14,7 @@ def train_one_epoch(model, loader, optimizer, device, angle_col=None):
     total = 0.0
     for batch in tqdm(loader, desc="train", leave=False):
         batch = batch.to(device)
-        y_hat = model(batch.x, batch.edge_index, getattr(batch, "edge_attr", None))
+        y_hat = model(batch)
         # assume y = [P_G, Q_G, |V|, theta] in columns 0..3 (adjust later)
         loss_num = rmse(y_hat[:, :3], batch.y[:, :3])
         loss_ang = circular_rmse(y_hat[:, 3], batch.y[:, 3])
@@ -32,7 +32,7 @@ def evaluate(model, loader, device):
     total_num, total_ang, count = 0.0, 0.0, 0
     for batch in tqdm(loader, desc="eval", leave=False):
         batch = batch.to(device)
-        y_hat = model(batch.x, batch.edge_index, getattr(batch, "edge_attr", None))
+        y_hat = model(batch)
         total_num += rmse(y_hat[:, :3], batch.y[:, :3]).item() * batch.num_nodes
         total_ang += circular_rmse(y_hat[:, 3], batch.y[:, 3]).item() * batch.num_nodes
         count += batch.num_nodes
@@ -52,10 +52,10 @@ def fit(model, dataset, cfg):
     val_loader   = DataLoader(val_set,   batch_size=cfg["train"]["batch_size"])
     test_loader  = DataLoader(test_set,  batch_size=cfg["train"]["batch_size"])
 
-    opt = Adam(model.parameters(), lr=cfg["train"]["lr"], weight_decay=cfg["train"]["weight_decay"])
+    opt = Adam(model.parameters(), lr=cfg['train']['lr'], weight_decay=cfg['train']['weight_decay'])
 
     best_val, best_state = float("inf"), None
-    for epoch in range(1, cfg["train"]["epochs"] + 1):
+    for epoch in range(1, cfg['train']['epochs'] + 1):
         tr = train_one_epoch(model, train_loader, opt, device)
         val = evaluate(model, val_loader, device)
         print(f"epoch {epoch:03d} | train_loss ~ {tr:.4f} | val_num {val['rmse_num']:.4f} | val_theta {val['rmse_theta']:.4f}")

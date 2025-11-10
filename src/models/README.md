@@ -58,10 +58,10 @@ newly created tensors (e.g. masks) sit on the same device as the model.
 
 ### General observations
 
-- Every processed tensor already lives on `_DEVICE = torch.device("cuda" if
+<!-- - Every processed tensor already lives on `_DEVICE = torch.device("cuda" if
   available else "cpu")` when the dataset was created. Models should still
   support re-homing tensors via `data = data.to(device)` because downstream
-  scripts may move batches explicitly.
+  scripts may move batches explicitly. -->
 - No global node IDs are stored; batching uses PyG's standard `batch` vector.
   Pooling layers (`global_mean_pool`, etc.) should consume `batch`.
 - The loader never adds positional encodings or self-loops. Add them in
@@ -71,18 +71,13 @@ newly created tensors (e.g. masks) sit on the same device as the model.
 
 ## Building models that plug into the dataset
 
-1. **Forward signature.** Prefer either:
+1. **Forward signature.** Prefer:
    ```python
    def forward(self, data: Data) -> torch.Tensor:
        x, edge_index, edge_attr = data.x, data.edge_index, getattr(data, "edge_attr", None)
        return self._forward_impl(x, edge_index, edge_attr=edge_attr)
    ```
-   or
-   ```python
-   def forward(self, x, edge_index, edge_attr=None, batch=None):
-       ...
-   ```
-   The first style keeps compatibility with `torch_geometric.loader.DataLoader`
+  keeping compatibility with `torch_geometric.loader.DataLoader`
    batches and lets you access auxiliary fields (`mask`, `maxs`, `edge_mask`).
 
 2. **Match targets.**
@@ -115,7 +110,7 @@ newly created tensors (e.g. masks) sit on the same device as the model.
   Example: `self.register_buffer("angle_scale", torch.tensor(1.0))` in
   `GraphSAGE_PI` automatically migrates when `model.to(device)` is invoked.
 
-7. **PNA setup.** `PNA_PI` requires two runtime values at instantiation time:
+1. **PNA setup.** `PNA_PI` requires two runtime values at instantiation time:
   `deg_histogram = compute_degree_histogram(dataset)` and
   `edge_dim = dataset[0].edge_attr.size(-1)`. Compute the histogram once, right
   after loading the dataset, and reuse it for every split so PNA sees consistent
@@ -153,11 +148,10 @@ builders, and optional factory functions.
 ## Workflow for adding a new model
 
 1. Create `<name>_pi.py` under `src/models/` and implement your `nn.Module`.
-2. Export it from `src/models/__init__.py` so experiment scripts can import it.
-3. If you introduce reusable layers, house them in `layers.py` with docstrings
-   explaining expected tensor shapes.
-4. Provide a minimal usage example (similar to the template above) either at
-   the bottom of the file guarded by `if __name__ == "__main__":` or inside the
+2. Export it from `src/models/__init__.py` and add it to the load_model()
+   factory in `src/models/__init__.py`.
+3. If you introduce reusable layers, house them in `layers.py` with docstrings explaining expected tensor shapes.
+4. Provide a minimal usage example (similar to the template above) either at the bottom of the file guarded by `if __name__ == "__main__":` or inside the
    docstring.
 5. Test the integration by running `uv run pytest tests/test_data_loading.py`
    (ensures the dataset is accessible) and your training script with a small

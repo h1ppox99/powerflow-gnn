@@ -52,7 +52,8 @@ dependencies = [
     "urllib3==2.5.0",
     "xxhash==3.6.0",
     "yarl==1.22.0",
-    "pytest==8.4.2"
+    "pytest==8.4.2",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv]
