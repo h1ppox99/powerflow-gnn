@@ -54,3 +54,25 @@ def kcl_quadratic_penalty(
     if reduction == "sum":
         return penalties.sum()
     return penalties.mean()
+
+
+@torch.no_grad()
+def check_kcl_residuals(
+    edge_index: Tensor,
+    edge_flows: Tensor,
+    net_injection: Tensor,
+    *,
+    tol: float = 1e-3,
+    verbose: bool = True,
+) -> Tensor:
+    """Return node-wise KCL residuals and emit a simple pass/fail summary."""
+
+    residual = nodal_imbalance(net_injection, edge_index, edge_flows)
+    max_violation = residual.abs().max().item()
+    if verbose:
+        print(f"[KCL] max violation = {max_violation:.3e}")
+        if max_violation > tol:
+            print("[KCL] WARN: Kirchhoff's current law violated at some nodes.")
+        else:
+            print("[KCL] PASS within tolerance.")
+    return residual
