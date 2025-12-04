@@ -1,22 +1,136 @@
-"""Standard supervised training loop with lightweight logging helpers."""
+"""Standard supervised training loop with scientific logging and metrics."""
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
-from src.losses.physical_loss import check_kcl_residuals
+from src.losses.physical_loss import nodal_imbalance
 from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
 
-def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1):
+def _masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    if mask is not None:
+        pred = pred[mask]
+        target = target[mask]
+    if pred.numel() == 0:
+        return torch.tensor(0.0, device=target.device)
+    return F.mse_loss(pred, target)
+
+
+def _angle_mse(pred_theta: torch.Tensor, target_theta: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    diff = torch.atan2(torch.sin(pred_theta - target_theta), torch.cos(pred_theta - target_theta))
+    if mask is not None:
+        diff = diff[mask]
+    if diff.numel() == 0:
+        return torch.tensor(0.0, device=pred_theta.device)
+    return torch.mean(diff**2)
+
+
+def _compute_loss(pred, target, mask, loss_type: str):
+    if loss_type == "mse":
+        loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
+        loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
+        return loss_num + loss_ang
+    # default: rmse split numeric + angle
+    loss_num = rmse(
+        pred[:, :3],
+        target[:, :3],
+        mask[:, :3] if mask is not None else None,
+    )
+    loss_ang = circular_rmse(
+        pred[:, 3],
+        target[:, 3],
+        mask[:, 3] if mask is not None else None,
+    )
+    return loss_num + loss_ang
+
+
+class MetricTracker:
+    """Accumulate per-component MSE/RMSE and KCL residual."""
+
+    def __init__(self, loss_type: str = "rmse") -> None:
+        self.loss_type = loss_type
+        self.reset()
+
+    def reset(self) -> None:
+        self.sse = {k: 0.0 for k in ("p", "q", "v", "theta")}
+        self.count = {k: 0.0 for k in ("p", "q", "v", "theta")}
+        self.loss_sum = 0.0
+        self.nodes = 0
+        self.kcl_sum = 0.0
+        self.kcl_batches = 0
+
+    def update(self, pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor], batch) -> None:
+        for (k, idx) in (("p", 0), ("q", 1), ("v", 2)):
+            diff = pred[:, idx] - target[:, idx]
+            if mask is not None:
+                diff = diff[mask[:, idx]]
+            if diff.numel() == 0:
+                continue
+            self.sse[k] += torch.sum(diff**2).item()
+            self.count[k] += diff.numel()
+
+        diff_theta = torch.atan2(
+            torch.sin(pred[:, 3] - target[:, 3]),
+            torch.cos(pred[:, 3] - target[:, 3]),
+        )
+        if mask is not None:
+            diff_theta = diff_theta[mask[:, 3]]
+        if diff_theta.numel() > 0:
+            self.sse["theta"] += torch.sum(diff_theta**2).item()
+            self.count["theta"] += diff_theta.numel()
+
+        loss = _compute_loss(pred, target, mask, self.loss_type)
+        self.loss_sum += loss.item() * pred.size(0)
+        self.nodes += pred.size(0)
+
+        with torch.no_grad():
+            edge_flows = _estimate_edge_flows(pred, batch)
+            net_injection = torch.stack([pred[:, 0], pred[:, 1]], dim=-1)
+            residual = nodal_imbalance(net_injection, batch.edge_index, edge_flows)
+            self.kcl_sum += residual.abs().mean().item()
+            self.kcl_batches += 1
+
+    def compute(self) -> Dict[str, float]:
+        out: Dict[str, float] = {}
+        for key in ("p", "q", "v", "theta"):
+            if self.count[key] > 0:
+                mse = self.sse[key] / self.count[key]
+                out[f"mse_{key}"] = mse
+                out[f"rmse_{key}"] = mse**0.5
+            else:
+                out[f"mse_{key}"] = float("nan")
+                out[f"rmse_{key}"] = float("nan")
+        # Backward-compatibility keys
+        out["rmse_p_active"] = out["rmse_p"]
+        out["rmse_q_reactive"] = out["rmse_q"]
+        out["rmse_voltage"] = out["rmse_v"]
+
+        num_count = self.count["p"] + self.count["q"] + self.count["v"]
+        num_sse = self.sse["p"] + self.sse["q"] + self.sse["v"]
+        out["rmse_num"] = (num_sse / num_count) ** 0.5 if num_count > 0 else float("nan")
+        out["rmse_theta"] = (self.sse["theta"] / self.count["theta"]) ** 0.5 if self.count["theta"] > 0 else float("nan")
+
+        total_nodes = max(self.nodes, 1)
+        out["loss"] = self.loss_sum / total_nodes
+        out["mean_kcl_residual"] = self.kcl_sum / max(self.kcl_batches, 1)
+        return out
+
+
+def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1, loss_type: str = "rmse"):
     model.train()
     total = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
@@ -25,18 +139,7 @@ def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, de
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        # assume y = [P_G, Q_G, |V|, theta] in columns 0..3 (adjust later)
-        loss_num = rmse(
-            y_hat[:, :3],
-            batch.y[:, :3],
-            mask[:, :3] if mask is not None else None,
-        )
-        loss_ang = circular_rmse(
-            y_hat[:, 3],
-            batch.y[:, 3],
-            mask[:, 3] if mask is not None else None,
-        )
-        loss = loss_num + loss_ang
+        loss = _compute_loss(y_hat, batch.y, mask, loss_type)
 
         optimizer.zero_grad()
         loss.backward()
@@ -53,18 +156,19 @@ def evaluate(
     debug: bool = False,
     debug_batches: int = 1,
     kcl_tolerance: float = 1e-2,
+    loss_type: str = "rmse",
+    return_loss: bool = False,
 ):
     model.eval()
-    rmse_totals = _init_rmse_accumulator()
+    tracker = MetricTracker(loss_type=loss_type)
     for step, batch in enumerate(tqdm(loader, desc="eval", leave=False)):
         batch = batch.to(device)
         y_hat = model(batch)
         mask = getattr(batch, "mask", None)
         if debug and step < debug_batches:
             _debug_report("eval", y_hat, batch.y, mask)
-            _kcl_debug(batch, y_hat, tol=kcl_tolerance)
-        _accumulate_rmse(rmse_totals, y_hat, batch.y, mask)
-    return _finalize_rmse(rmse_totals)
+        tracker.update(y_hat, batch.y, mask, batch)
+    return tracker.compute()
 
 def fit(model, dataset, cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,20 +180,56 @@ def fit(model, dataset, cfg):
     debug_batches = int(debug_cfg.get("batches", 1))
     kcl_tol = float(debug_cfg.get("kcl_tolerance", 1e-2))
     history: List[dict[str, float]] = []
+    loss_type = cfg.get("train", {}).get("loss", "rmse").lower()
 
     n = len(dataset)
-    n_train = int(0.8 * n)
-    n_val = int(0.1 * n)
-    n_test = n - n_train - n_val
-    train_set, val_set, test_set = random_split(dataset, [n_train, n_val, n_test], generator=torch.Generator().manual_seed(7))
+    split_cfg = cfg["train"].get("split", {"train": 0.8, "val": 0.1, "test": 0.1})
+    train_frac = float(split_cfg.get("train", 0.8))
+    val_frac = float(split_cfg.get("val", 0.1))
+    test_frac = float(split_cfg.get("test", 0.1))
+    total = train_frac + val_frac + test_frac
+    if abs(total - 1.0) > 1e-6:
+        train_frac /= total
+        val_frac /= total
+        test_frac /= total
+    n_train = max(1, int(train_frac * n))
+    n_val = max(1, int(val_frac * n))
+    n_test = max(1, n - n_train - n_val)
+    seed = int(cfg["train"].get("seed", 7))
+    train_set, val_set, test_set = random_split(
+        dataset,
+        [n_train, n_val, n_test],
+        generator=torch.Generator().manual_seed(seed),
+    )
 
     train_loader = DataLoader(train_set, batch_size=cfg["train"]["batch_size"], shuffle=True)
     val_loader   = DataLoader(val_set,   batch_size=cfg["train"]["batch_size"])
     test_loader  = DataLoader(test_set,  batch_size=cfg["train"]["batch_size"])
 
     opt = Adam(model.parameters(), lr=cfg['train']['lr'], weight_decay=cfg['train']['weight_decay'])
+    sched_cfg = cfg["train"].get("scheduler")
+    scheduler = None
+    if sched_cfg and sched_cfg.get("type", "").lower() == "reduce_on_plateau":
+        scheduler = ReduceLROnPlateau(
+            opt,
+            factor=float(sched_cfg.get("factor", 0.5)),
+            patience=int(sched_cfg.get("patience", 5)),
+            verbose=False,
+        )
 
     best_val, best_state = float("inf"), None
+    header_printed = False
+    colw = 12
+    fmt = (
+        f"{{:^6}} | "  # epoch
+        f"{{:^{colw}}} | "  # train_loss
+        f"{{:^{colw}}} | "  # val_loss
+        f"{{:^{colw}}} | "  # mse_P
+        f"{{:^{colw}}} | "  # mse_Q
+        f"{{:^{colw}}} | "  # mse_V
+        f"{{:^{colw}}} | "  # mse_theta
+        f"{{:^{colw}}}"     # KCL_mean
+    )
     for epoch in range(1, cfg['train']['epochs'] + 1):
         tr = train_one_epoch(
             model,
@@ -98,6 +238,7 @@ def fit(model, dataset, cfg):
             device,
             debug=debug_enable and epoch == 1,
             debug_batches=debug_batches,
+            loss_type=loss_type,
         )
         val = evaluate(
             model,
@@ -106,19 +247,55 @@ def fit(model, dataset, cfg):
             debug=debug_enable and epoch == 1,
             debug_batches=debug_batches,
             kcl_tolerance=kcl_tol,
+            loss_type=loss_type,
         )
-        print(f"epoch {epoch:03d} | train_loss ~ {tr:.4f} | val_num {val['rmse_num']:.4f} | val_theta {val['rmse_theta']:.4f}")
+        if scheduler is not None:
+            scheduler.step(val["loss"] if isinstance(scheduler, ReduceLROnPlateau) else None)
 
-        history.append(
-            {
-                "epoch": float(epoch),
-                "train_loss": float(tr),
-                "val_rmse_num": float(val["rmse_num"]),
-                "val_rmse_theta": float(val["rmse_theta"]),
-            }
+        row = {
+            "epoch": float(epoch),
+            "train_loss": float(tr),
+            "val_loss": float(val["loss"]),
+            "val_mse_p": float(val["mse_p"]),
+            "val_mse_q": float(val["mse_q"]),
+            "val_mse_v": float(val["mse_v"]),
+            "val_mse_theta": float(val["mse_theta"]),
+            "val_rmse_num": float(val["rmse_num"]),
+            "val_rmse_theta": float(val["rmse_theta"]),
+            "val_mean_kcl": float(val["mean_kcl_residual"]),
+        }
+        history.append(row)
+
+        if not header_printed:
+            header_printed = True
+            tqdm.write(
+                fmt.format(
+                    "epoch",
+                    "train_loss",
+                    "val_loss",
+                    "mse_P",
+                    "mse_Q",
+                    "mse_V",
+                    "mse_theta",
+                    "KCL_mean",
+                )
+            )
+        tqdm.write(
+            fmt.format(
+                f"{epoch:03d}",
+                f"{tr:.4e}",
+                f"{val['loss']:.4e}",
+                f"{val['mse_p']:.4e}",
+                f"{val['mse_q']:.4e}",
+                f"{val['mse_v']:.4e}",
+                f"{val['mse_theta']:.4e}",
+                f"{val['mean_kcl_residual']:.4e}",
+            )
         )
-        if val["rmse_num"] + val["rmse_theta"] < best_val:
-            best_val = val["rmse_num"] + val["rmse_theta"]
+
+        val_loss = val.get("loss", val["rmse_num"] + val["rmse_theta"])
+        if val_loss < best_val:
+            best_val = val_loss
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
 
     model.load_state_dict(best_state)
@@ -129,50 +306,97 @@ def fit(model, dataset, cfg):
         debug=debug_enable,
         debug_batches=debug_batches,
         kcl_tolerance=kcl_tol,
+        loss_type=loss_type,
+        return_loss=True,
     )
-    print(f"[TEST] num {test['rmse_num']:.4f} | theta {test['rmse_theta']:.4f}")
-    print(
-        "[TEST details] P {:.4f} | Q {:.4f} | |V| {:.4f}".format(
-            test["rmse_p_active"],
-            test["rmse_q_reactive"],
-            test["rmse_voltage"],
+    tqdm.write(
+        "[TEST] loss {loss:.4e} | rmse_num {num:.4e} | rmse_theta {theta:.4e} | "
+        "mse_p {p:.4e} | mse_q {q:.4e} | mse_v {v:.4e} | mse_theta {t:.4e} | mean_kcl {kcl:.4e}".format(
+            loss=test["loss"],
+            num=test["rmse_num"],
+            theta=test["rmse_theta"],
+            p=test["mse_p"],
+            q=test["mse_q"],
+            v=test["mse_v"],
+            t=test["mse_theta"],
+            kcl=test["mean_kcl_residual"],
         )
     )
     _log_history(history, logging_cfg)
+    _plot_results(history, logging_cfg)
+    _baseline_comparison(test)
     return test
 
 
 def _log_history(history: List[Mapping[str, float]], logging_cfg: Mapping | None) -> None:
-    if not history or not logging_cfg:
+    if not history:
         return
+    out_dir = Path(logging_cfg.get("output_dir", "output")) if logging_cfg else Path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = out_dir / "metrics.jsonl"
+    csv_path = out_dir / "metrics.csv"
 
-    history_path = logging_cfg.get("history_path")
-    if history_path:
-        _write_history(history, Path(history_path))
-
-    if logging_cfg.get("plot_losses"):
-        plot_path = logging_cfg.get("loss_plot_path")
-        if plot_path is None and history_path is not None:
-            plot_path = str(Path(history_path).with_suffix(".png"))
-        if plot_path is None:
-            plot_path = "output/loss_curves.png"
-        plot_training_curves(
-            history,
-            metrics=logging_cfg.get("plot_metrics"),
-            smoothing=logging_cfg.get("plot_smoothing", 1),
-            title=logging_cfg.get("plot_title"),
-            save_path=plot_path,
-            show=logging_cfg.get("show_plots", False),
-        )
-
-
-def _write_history(history: Iterable[Mapping[str, float]], path: Path) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as handle:
+    with jsonl_path.open("w") as handle:
         for row in history:
             handle.write(json.dumps(row))
             handle.write("\n")
+
+    # CSV
+    keys = sorted(history[0].keys())
+    with csv_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(history)
+
+
+def _plot_results(history: List[Mapping[str, float]], logging_cfg: Mapping | None) -> None:
+    if not history:
+        return
+    out_dir = Path(logging_cfg.get("output_dir", "output")) if logging_cfg else Path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    epochs = [h["epoch"] for h in history]
+    train_loss = [h["train_loss"] for h in history]
+    val_loss = [h["val_loss"] for h in history]
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+    axs[0].plot(epochs, train_loss, label="train_loss")
+    axs[0].plot(epochs, val_loss, label="val_loss")
+    axs[0].set_yscale("log")
+    axs[0].set_xlabel("Epoch")
+    axs[0].set_ylabel("Loss (log scale)")
+    axs[0].legend()
+    axs[0].grid(True, ls="--", alpha=0.5)
+
+    for key, label in (
+        ("val_mse_p", "MSE_P"),
+        ("val_mse_q", "MSE_Q"),
+        ("val_mse_v", "MSE_V"),
+        ("val_mse_theta", "MSE_theta"),
+    ):
+        axs[1].plot(epochs, [h[key] for h in history], label=label)
+    axs[1].set_yscale("log")
+    axs[1].set_xlabel("Epoch")
+    axs[1].set_ylabel("Validation MSE (log scale)")
+    axs[1].legend()
+    axs[1].grid(True, ls="--", alpha=0.5)
+
+    fig.tight_layout()
+    fig.savefig(out_dir / "training_curves.png", dpi=200)
+    plt.close(fig)
+
+
+def _baseline_comparison(test_metrics: Mapping[str, float]) -> None:
+    target_rows = [
+        ("P/Q MSE (target ~1e-4)", test_metrics["mse_p"], test_metrics["mse_q"], "≈1e-4"),
+        ("V/θ MSE (target ~1e-5)", test_metrics["mse_v"], test_metrics["mse_theta"], "≈1e-5"),
+        ("Total target", test_metrics["loss"], None, "≈3.75e-5"),
+    ]
+    tqdm.write("\nBaseline comparison (PowerGraph IEEE118 targets):")
+    for name, v1, v2, ref in target_rows:
+        if v2 is None:
+            tqdm.write(f"{name:30s}: {v1:.4e} (ref {ref})")
+        else:
+            tqdm.write(f"{name:30s}: {v1:.4e} / {v2:.4e} (ref {ref})")
 
 
 @torch.no_grad()
@@ -189,87 +413,7 @@ def _debug_report(prefix: str, preds: torch.Tensor, target: torch.Tensor, mask: 
     if mask is not None:
         valid = mask.detach().cpu().float().mean().item()
         msg += f" | mask_active {valid:.3f}"
-    print(msg)
-
-
-def _init_rmse_accumulator() -> Dict[str, Dict[str, float]]:
-    return {
-        "sse": {key: 0.0 for key in ("p_active", "q_reactive", "voltage", "angle")},
-        "count": {key: 0.0 for key in ("p_active", "q_reactive", "voltage", "angle")},
-    }
-
-
-def _accumulate_rmse(
-    totals: Dict[str, Dict[str, float]],
-    pred: torch.Tensor,
-    target: torch.Tensor,
-    mask: torch.Tensor | None,
-) -> None:
-    for key, idx in (("p_active", 0), ("q_reactive", 1), ("voltage", 2)):
-        diff = pred[:, idx] - target[:, idx]
-        if mask is not None:
-            diff = diff[mask[:, idx]]
-        if diff.numel() == 0:
-            continue
-        totals["sse"][key] += torch.sum(diff**2).item()
-        totals["count"][key] += diff.numel()
-
-    diff_theta = torch.atan2(
-        torch.sin(pred[:, 3] - target[:, 3]),
-        torch.cos(pred[:, 3] - target[:, 3]),
-    )
-    if mask is not None:
-        diff_theta = diff_theta[mask[:, 3]]
-    if diff_theta.numel() > 0:
-        totals["sse"]["angle"] += torch.sum(diff_theta**2).item()
-        totals["count"]["angle"] += diff_theta.numel()
-
-
-def _finalize_rmse(totals: Dict[str, Dict[str, float]]) -> Dict[str, float]:
-    results: Dict[str, float] = {}
-    num_sse = 0.0
-    num_count = 0.0
-    for key in ("p_active", "q_reactive", "voltage"):
-        count = totals["count"][key]
-        if count > 0:
-            rmse_val = (totals["sse"][key] / count) ** 0.5
-            results[f"rmse_{key}"] = rmse_val
-            num_sse += totals["sse"][key]
-            num_count += count
-        else:
-            results[f"rmse_{key}"] = float("nan")
-
-    if num_count > 0:
-        results["rmse_num"] = (num_sse / num_count) ** 0.5
-    else:
-        results["rmse_num"] = float("nan")
-
-    angle_count = totals["count"]["angle"]
-    if angle_count > 0:
-        results["rmse_theta"] = (totals["sse"]["angle"] / angle_count) ** 0.5
-    else:
-        results["rmse_theta"] = float("nan")
-    results["rmse_angle"] = results["rmse_theta"]
-    return results
-
-
-@torch.no_grad()
-def _kcl_debug(batch, preds, tol: float) -> None:
-    edge_flows = _estimate_edge_flows(preds, batch)
-    net_injection = torch.stack([preds[:, 0], preds[:, 1]], dim=-1)
-    residual = check_kcl_residuals(
-        batch.edge_index,
-        edge_flows,
-        net_injection,
-        tol=tol,
-        verbose=True,
-    )
-    print(
-        "[DEBUG:KCL] mean |residual| {:.3e} | std {:.3e}".format(
-            residual.abs().mean().item(),
-            residual.std().item(),
-        )
-    )
+    tqdm.write(msg)
 
 
 def _estimate_edge_flows(preds: torch.Tensor, batch) -> torch.Tensor:

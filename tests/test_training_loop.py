@@ -121,9 +121,9 @@ def test_evaluate_returns_expected_keys_and_finite():
     model.to(device)
 
     metrics = evaluate(model, loader, device)
-    assert set(metrics.keys()) == {"rmse_num", "rmse_theta"}
-    assert math.isfinite(metrics["rmse_num"])
-    assert math.isfinite(metrics["rmse_theta"])
+    for key in ("rmse_num", "rmse_theta"):
+        assert key in metrics
+        assert math.isfinite(metrics[key])
 
 
 def test_fit_end_to_end_returns_test_metrics():
@@ -143,11 +143,10 @@ def test_fit_end_to_end_returns_test_metrics():
 
     test_metrics = fit(model, dataset, cfg)
 
-    # Sanity checks on return
     assert isinstance(test_metrics, dict)
-    assert set(test_metrics.keys()) == {"rmse_num", "rmse_theta"}
-    assert math.isfinite(test_metrics["rmse_num"])
-    assert math.isfinite(test_metrics["rmse_theta"])
+    for key in ("rmse_num", "rmse_theta"):
+        assert key in test_metrics
+        assert math.isfinite(test_metrics[key])
 
     # Reasonable bounds for this tiny synthetic problem
     assert 0.0 <= test_metrics["rmse_num"] < 5.0

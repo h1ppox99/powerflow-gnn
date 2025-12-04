@@ -1,4 +1,11 @@
-"""PyTorch Geometric dataset wrapper for the PowerGraph benchmarks."""
+"""Optimal Power Flow (OPF) data layout for regression.
+
+Raw Input (Xopf.mat): 4 cols -> [P_net, Q_net, zero-placeholder, NodeType(1=PQ,2=PV,3=Slack)].
+Processed Input (Data.x): slice cols [0,1,3] -> [P_net, Q_net, NodeType]; zero col is dropped (V is an output).
+Target (Data.y): optimal solution 4 cols -> [P_g, Q_g, V, theta].
+Task: predict optimal V and theta (and P_g/Q_g) conditioned on power constraints and node type.
+Simplified wrapper for the PowerGraph OPF regression benchmark.
+"""
 
 from __future__ import annotations
 
@@ -11,13 +18,15 @@ import scipy.io
 import torch
 from torch_geometric.data import Data, InMemoryDataset
 
-
-# _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-_DEVICE = torch.device("cpu") # Apparently, best practice is to load data on CPU and move to GPU later.
+# Best practice: Load data on CPU
+_DEVICE = torch.device("cpu")
 
 
 class PowerGrid(InMemoryDataset):
-    """PyG ``InMemoryDataset`` for the PowerGraph node-level benchmarks."""
+    """
+    PyG ``InMemoryDataset`` compatible with the original PowerGraph codebase
+    but optimized and fixed for Optimal Power Flow (OPF).
+    """
 
     names = {
         "uk": ["uk", "Uk", "UK", None],
@@ -31,7 +40,7 @@ class PowerGrid(InMemoryDataset):
         self,
         root: str | Path,
         name: str,
-        datatype: str = "binary",
+        datatype: str = "nodeopf", # Default to OPF, but accepts arguments
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
         pre_filter: Optional[Callable] = None,
@@ -44,196 +53,129 @@ class PowerGrid(InMemoryDataset):
 
         if self.name not in self.names:
             raise ValueError(f"Unknown dataset {name!r}. Expected one of {list(self.names)}.")
+        
+        # Compatibility Check: Warn if user tries to load non-OPF datatypes
+        if self.datatype != "nodeopf":
+            print(f"WARNING: This simplified class is optimized for 'nodeopf'. "
+                  f"You requested '{self.datatype}', but it will process as OPF.")
 
         super().__init__(str(self._root), transform, pre_transform, pre_filter)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     # ------------------------------------------------------------------ #
-    # Directory helpers
+    # Directory helpers (Kept consistent with your codebase)
     # ------------------------------------------------------------------ #
 
     @property
     def raw_dir(self) -> str:
-        return str(self._root / self.name/ self.name / "raw") # when unzipping, the name appears twice
+        # Matches your previous snippet structure
+        return str(self._root / self.name / self.name / "raw")
 
     @property
     def processed_dir(self) -> str:
-        suffix = {
-            "binary": "processed_b",
-            "regression": "processed_r",
-            "multiclass": "processed_m",
-            "node": "processed_node",
-            "nodeopf": "processed_nodeopf",
-        }.get(self.datatype)
-        if suffix is None:
-            raise ValueError(
-                f"Unsupported datatype {self.datatype!r}. "
-                "Expected one of binary/regression/multiclass/node/nodeopf."
-            )
-        return str(self._root / self.name / suffix)
+        # Forces the use of the OPF processed directory to avoid conflicts
+        return str(self._root / self.name / "processed_nodeopf")
 
     @property
     def raw_file_names(self) -> list[str]:
-        if self.datatype in {"binary", "regression", "multiclass"}:
-            return [
-                "Bf.mat",
-                "blist.mat",
-                "Ef.mat",
-                "exp.mat",
-                "of_bi.mat",
-                "of_mc.mat",
-                "of_reg.mat",
-                "edge_index.mat",
-                "edge_attr.mat",
-            ]
-        if self.datatype == "nodeopf":
-            return [
-                "edge_index_opf.mat",
-                "edge_attr_opf.mat",
-                "Xopf.mat",
-                "Y_polar_opf.mat",
-            ]
-        # Default to node-level power flow data.
+        # [cite_start]STRICTLY the files needed for OPF [cite: 914, 918, 910, 912]
         return [
-            "edge_index.mat",
-            "edge_attr.mat",
-            "X.mat",
-            "Y_polar.mat",
+            "edge_index_opf.mat",
+            "edge_attr_opf.mat",
+            "Xopf.mat",
+            "Y_polar_opf.mat",
         ]
 
     @property
     def processed_file_names(self) -> str:
         return "data.pt"
 
-    def download(self) -> None:  # pragma: no cover - manual download only
+    def download(self) -> None:
         raise RuntimeError(
             "This dataset expects the Figshare archive to be downloaded manually. "
             "Place the extracted folders under <root>/<dataset_name>/raw."
         )
 
     # ------------------------------------------------------------------ #
-    # Processing
+    # Processing (Fixed Logic)
     # ------------------------------------------------------------------ #
 
     def process(self) -> None:
-        def th_delete(tensor: torch.Tensor, indices: list[int] | torch.Tensor) -> torch.Tensor:
-            mask = torch.ones_like(tensor, dtype=torch.bool)
-            mask[indices] = False
-            return tensor[mask]
+        """
+        Processing logic strictly for Optimal Power Flow node-level regression.
+        Includes global normalization and full feature slicing.
+        """
+        
+        # 1. Load Data Files
+        try:
+            edge_index_mat = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_index_opf.mat"))
+            edge_attr_mat = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_attr_opf.mat"))
+            X_mat = mat73.loadmat(str(Path(self.raw_dir) / "Xopf.mat"))
+            Y_mat = mat73.loadmat(str(Path(self.raw_dir) / "Y_polar_opf.mat"))
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Missing OPF .mat files in {self.raw_dir}. Ensure you downloaded the correct data.")
 
-        datatype = self.datatype
+        # 2. Extract Data (Safe Key Access)
+        # Handles potential naming inconsistencies
+        e_idx = edge_index_mat.get("edge_index_opf", edge_index_mat.get("edge_index"))
+        e_attr = edge_attr_mat.get("edge_attr_opf", edge_attr_mat.get("edge_attr"))
+        
+        # Handle X and Y keys safely
+        x_key = "Xopf" if "Xopf" in X_mat else "X"
+        y_key = "Y_polar_opf" if "Y_polar_opf" in Y_mat else "Y_polar"
 
-        if datatype in {"binary", "regression", "multiclass"}:
-            edge_order = mat73.loadmat(str(Path(self.raw_dir) / "blist.mat"))
-            edge_order = torch.tensor(edge_order["bList"] - 1)
+        # 3. Process Edges
+        # Fix 0-based indexing for edges (MATLAB is 1-based)
+        edge_index = torch.tensor(e_idx.astype(np.int32) - 1, dtype=torch.long).t().contiguous()
+        
+        # Normalize edge attributes (Conductance/Susceptance)
+        edge_attr = torch.tensor(e_attr, dtype=torch.float)
+        edge_attr = torch.nn.functional.normalize(edge_attr, dim=0)
 
-            of_bi = mat73.loadmat(str(Path(self.raw_dir) / "of_bi.mat"))["output_features"]
-            of_reg = mat73.loadmat(str(Path(self.raw_dir) / "of_reg.mat"))["dns_MW"]
-            of_mc = mat73.loadmat(str(Path(self.raw_dir) / "of_mc.mat"))["category"]
+        # 4. Process Node Features (keep cols 0,1,3; drop col 2)
+        fullX = [
+            torch.tensor(sample[:, [0, 1, 3]], dtype=torch.float, device=_DEVICE)
+            for sample in X_mat[x_key]
+        ]
+        
+        # Targets
+        fullY = [
+            torch.tensor(sample, dtype=torch.float, device=_DEVICE) 
+            for sample in Y_mat[y_key]
+        ]
 
-            node_f = mat73.loadmat(str(Path(self.raw_dir) / "Bf.mat"))["B_f_tot"]
-            edge_f = mat73.loadmat(str(Path(self.raw_dir) / "Ef.mat"))["E_f_post"]
-            exp_mask = mat73.loadmat(str(Path(self.raw_dir) / "exp.mat"))["explainations"]
+        # 5. Global Normalization Calculation
+        # Concatenate all graphs to find the global max for scaling
+        fullXcat = torch.cat(fullX, dim=0)
+        fullYcat = torch.cat(fullY, dim=0)
+        
+        maxsX, _ = torch.max(torch.abs(fullXcat), dim=0)
+        maxsX[maxsX == 0] = 1.0  # Prevent division by zero
+        
+        maxsY, _ = torch.max(torch.abs(fullYcat), dim=0)
+        maxsY[maxsY == 0] = 1.0
 
-            data_list = []
+        data_list = []
+        for sample_x, sample_y in zip(fullX, fullY):
+            # Create mask: True where we have a non-zero target (the Unknowns)
+            # [cite_start]This implements the masking strategy from the paper [cite: 133-137]
+            mask = sample_y != 0
+            
+            data = Data(
+                x=sample_x / maxsX,       # Normalize Inputs
+                edge_index=edge_index,    # Topology
+                edge_attr=edge_attr,      # Edge Features
+                y=sample_y / maxsY,       # Normalize Targets
+                maxs=maxsY,               # Store for de-normalization
+                mask=mask                 # Boolean mask for loss calculation
+            )
+            data_list.append(data)
 
-            for i in range(len(node_f)):
-                x = torch.tensor(node_f[i][0], dtype=torch.float32).reshape(-1, 3).to(_DEVICE)
-                features = torch.tensor(edge_f[i][0], dtype=torch.float32)
-                mask = torch.zeros(len(features), 1)
-                if exp_mask[i][0] is not None:
-                    mask[exp_mask[i][0].astype("int") - 1] = 1
+        if self.pre_filter is not None:
+            data_list = [d for d in data_list if self.pre_filter(d)]
 
-                cont = [j for j in range(len(features)) if np.all(np.array(features[j])) == 0]
-                e_mask_post = th_delete(mask, cont)
-                e_mask_post = torch.cat((e_mask_post, e_mask_post), 0).to(_DEVICE)
+        if self.pre_transform is not None:
+            data_list = [self.pre_transform(d) for d in data_list]
 
-                f_tot = th_delete(features, cont).reshape(-1, 4).type(torch.float32)
-                f_totw = torch.cat((f_tot, f_tot), 0).to(_DEVICE)
-
-                edge_iw = th_delete(edge_order, cont).reshape(-1, 2).type(torch.long)
-                edge_iwr = torch.fliplr(edge_iw)
-                edge_iw = torch.cat((edge_iw, edge_iwr), 0).t().contiguous().to(_DEVICE)
-
-                if datatype == "binary":
-                    y = torch.tensor(of_bi[i][0], dtype=torch.float, device=_DEVICE).view(1, -1)
-                elif datatype == "regression":
-                    y = torch.tensor(of_reg[i], dtype=torch.float, device=_DEVICE).view(1, -1)
-                else:
-                    y = torch.tensor(np.argmax(of_mc[i][0]), dtype=torch.float, device=_DEVICE).view(1, -1)
-
-                data = Data(
-                    x=x,
-                    edge_index=edge_iw,
-                    edge_attr=f_totw,
-                    y=y.to(torch.float),
-                    edge_mask=e_mask_post,
-                    idx=i,
-                )
-
-                if self.pre_filter is not None and not self.pre_filter(data):
-                    continue
-
-                if self.pre_transform is not None:
-                    data = self.pre_transform(data)
-
-                data_list.append(data)
-
-        elif datatype == "nodeopf":
-            edge_index = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_index_opf.mat"))["edge_index"]
-            edge_attr = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_attr_opf.mat"))["edge_attr"]
-            X = mat73.loadmat(str(Path(self.raw_dir) / "Xopf.mat"))
-            Y = mat73.loadmat(str(Path(self.raw_dir) / "Y_polar_opf.mat"))
-            edge_order = torch.tensor(edge_index.astype(np.int32) - 1, dtype=torch.long).t().contiguous().to(_DEVICE)
-            edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-            edge_attr = torch.nn.functional.normalize(edge_attr, dim=0)
-
-            fullX = [torch.tensor(sample[:, [0, 1, 3]], dtype=torch.float, device=_DEVICE) for sample in X["X"]]
-            fullY = [torch.tensor(sample, dtype=torch.float, device=_DEVICE) for sample in Y["Y_polar"]]
-            fullXcat = torch.cat(fullX, dim=0)
-            fullYcat = torch.cat(fullY, dim=0)
-            maxsX, _ = torch.max(torch.abs(fullXcat), dim=0)
-            maxsY, _ = torch.max(torch.abs(fullYcat), dim=0)
-
-            data_list = []
-            for sample_x, sample_y in zip(fullX, fullY):
-                mask = sample_y != 0
-                data = Data(
-                    x=sample_x / maxsX,
-                    edge_index=edge_order,
-                    y=sample_y / maxsY,
-                    edge_attr=edge_attr,
-                    maxs=maxsY,
-                    mask=mask,
-                ).to(_DEVICE)
-                data_list.append(data)
-        else:
-            edge_index = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_index.mat"))["edge_index"]
-            edge_attr = scipy.io.loadmat(str(Path(self.raw_dir) / "edge_attr.mat"))["edge_attr"]
-            X = mat73.loadmat(str(Path(self.raw_dir) / "X.mat"))
-            Y = mat73.loadmat(str(Path(self.raw_dir) / "Y_polar.mat"))
-            edge_order = torch.tensor(edge_index.astype(np.int32) - 1, dtype=torch.long).t().contiguous().to(_DEVICE)
-            edge_attr = torch.tensor(edge_attr, dtype=torch.float)
-            edge_attr = torch.nn.functional.normalize(edge_attr, dim=0)
-
-            fullX = [torch.tensor(sample, dtype=torch.float, device=_DEVICE) for sample in X["Xpf"]]
-            fullY = [torch.tensor(sample, dtype=torch.float, device=_DEVICE) for sample in Y["Y_polarpf"]]
-            fullXcat = torch.cat(fullX, dim=0)
-            fullYcat = torch.cat(fullY, dim=0)
-            maxsX, _ = torch.max(torch.abs(fullXcat), dim=0)
-            maxsY, _ = torch.max(torch.abs(fullYcat), dim=0)
-
-            data_list = []
-            for sample_x, sample_y in zip(fullX, fullY):
-                mask = sample_y != 0
-                data = Data(
-                    x=sample_x / maxsX,
-                    edge_index=edge_order,
-                    y=sample_y / maxsY,
-                    edge_attr=edge_attr,
-                    maxs=maxsY,
-                    mask=mask,
-                ).to(_DEVICE)
-                data_list.append(data)
-
+        # Save processed data
         torch.save(self.collate(data_list), self.processed_paths[0])
