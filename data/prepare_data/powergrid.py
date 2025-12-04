@@ -1,6 +1,10 @@
-"""
-PyTorch Geometric dataset wrapper for the PowerGraph benchmarks.
-Simplified specifically for Optimal Power Flow (OPF) regression.
+"""Optimal Power Flow (OPF) data layout for regression.
+
+Raw Input (Xopf.mat): 4 cols -> [P_net, Q_net, zero-placeholder, NodeType(1=PQ,2=PV,3=Slack)].
+Processed Input (Data.x): slice cols [0,1,3] -> [P_net, Q_net, NodeType]; zero col is dropped (V is an output).
+Target (Data.y): optimal solution 4 cols -> [P_g, Q_g, V, theta].
+Task: predict optimal V and theta (and P_g/Q_g) conditioned on power constraints and node type.
+Simplified wrapper for the PowerGraph OPF regression benchmark.
 """
 
 from __future__ import annotations
