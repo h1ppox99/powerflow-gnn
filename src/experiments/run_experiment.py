@@ -5,6 +5,7 @@ from src.models.graphsage_pi import GraphSAGE_PI
 from src.training.train import fit
 from pathlib import Path
 from src.models import load_model
+from src.experiments.experiment_logger import log_experiment_run
 
 def load_dataset(cfg):
     if cfg["data"]["backend"] == "synthetic":
@@ -39,7 +40,12 @@ def main():
 
     dataset = load_dataset(cfg)
     model = load_model(cfg, dataset)
-    fit(model, dataset, cfg)
+    test_metrics = fit(model, dataset, cfg)
+
+    try:
+        log_experiment_run(args.config, cfg, test_metrics)
+    except Exception as exc:  # pragma: no cover - best-effort logging
+        print(f"Warning: failed to record experiment in shared CSV: {exc}")
 
 if __name__ == "__main__":
     main()
