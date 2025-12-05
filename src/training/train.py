@@ -17,7 +17,7 @@ from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
-from src.losses.physical_loss import nodal_imbalance
+from src.losses.physical_loss import kcl_quadratic_penalty, nodal_imbalance
 from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
 
@@ -39,13 +39,35 @@ def _angle_mse(pred_theta: torch.Tensor, target_theta: torch.Tensor, mask: Optio
     return torch.mean(diff**2)
 
 
-def _compute_loss(pred, target, mask, loss_type: str):
+def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_weight: float = 1.0) -> torch.Tensor:
     if loss_type == "mse":
         loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
         loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
         return loss_num + loss_ang
     elif loss_type == "physics_enhanced":
-        pass
+        loss_num = rmse(
+            pred[:, :3],
+            target[:, :3],
+            mask[:, :3] if mask is not None else None,
+        )
+        loss_ang = circular_rmse(
+            pred[:, 3],
+            target[:, 3],
+            mask[:, 3] if mask is not None else None,
+        )
+        if batch is None:
+            physics_penalty = torch.tensor(0.0, device=pred.device)
+        else:
+            edge_flows = _estimate_edge_flows(pred, batch)
+            net_injection = torch.stack([pred[:, 0], pred[:, 1]], dim=-1)
+            kcl_mask = mask[:, :2] if mask is not None else None
+            physics_penalty = kcl_quadratic_penalty(
+                net_injection,
+                batch.edge_index,
+                edge_flows,
+                mask=kcl_mask,
+            )
+        return loss_num + loss_ang + physics_weight * physics_penalty
     # default: rmse split numeric + angle
     loss_num = rmse(
         pred[:, :3],
@@ -63,8 +85,9 @@ def _compute_loss(pred, target, mask, loss_type: str):
 class MetricTracker:
     """Accumulate per-component MSE/RMSE and KCL residual."""
 
-    def __init__(self, loss_type: str = "rmse") -> None:
+    def __init__(self, loss_type: str = "rmse", physics_weight: float = 1.0) -> None:
         self.loss_type = loss_type
+        self.physics_weight = physics_weight
         self.reset()
 
     def reset(self) -> None:
@@ -75,7 +98,7 @@ class MetricTracker:
         self.kcl_sum = 0.0
         self.kcl_batches = 0
 
-    def update(self, pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor], batch) -> None:
+    def update(self, pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor], batch, *, physics_weight: Optional[float] = None) -> None:
         for (k, idx) in (("p", 0), ("q", 1), ("v", 2)):
             diff = pred[:, idx] - target[:, idx]
             if mask is not None:
@@ -95,7 +118,8 @@ class MetricTracker:
             self.sse["theta"] += torch.sum(diff_theta**2).item()
             self.count["theta"] += diff_theta.numel()
 
-        loss = _compute_loss(pred, target, mask, self.loss_type)
+        weight = self.physics_weight if physics_weight is None else physics_weight
+        loss = _compute_loss(pred, target, mask, self.loss_type, batch=batch, physics_weight=weight)
         self.loss_sum += loss.item() * pred.size(0)
         self.nodes += pred.size(0)
 
@@ -132,7 +156,7 @@ class MetricTracker:
         return out
 
 
-def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1, loss_type: str = "rmse"):
+def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1, loss_type: str = "rmse", physics_weight: float = 1.0):
     model.train()
     total = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
@@ -141,7 +165,7 @@ def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, de
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        loss = _compute_loss(y_hat, batch.y, mask, loss_type)
+        loss = _compute_loss(y_hat, batch.y, mask, loss_type, batch=batch, physics_weight=physics_weight)
 
         optimizer.zero_grad()
         loss.backward()
@@ -160,16 +184,17 @@ def evaluate(
     kcl_tolerance: float = 1e-2,
     loss_type: str = "rmse",
     return_loss: bool = False,
+    physics_weight: float = 1.0,
 ):
     model.eval()
-    tracker = MetricTracker(loss_type=loss_type)
+    tracker = MetricTracker(loss_type=loss_type, physics_weight=physics_weight)
     for step, batch in enumerate(tqdm(loader, desc="eval", leave=False)):
         batch = batch.to(device)
         y_hat = model(batch)
         mask = getattr(batch, "mask", None)
         if debug and step < debug_batches:
             _debug_report("eval", y_hat, batch.y, mask)
-        tracker.update(y_hat, batch.y, mask, batch)
+        tracker.update(y_hat, batch.y, mask, batch, physics_weight=physics_weight)
     return tracker.compute()
 
 def fit(model, dataset, cfg):
@@ -207,6 +232,7 @@ def fit(model, dataset, cfg):
     train_loader = DataLoader(train_set, batch_size=cfg["train"]["batch_size"], shuffle=True)
     val_loader   = DataLoader(val_set,   batch_size=cfg["train"]["batch_size"])
     test_loader  = DataLoader(test_set,  batch_size=cfg["train"]["batch_size"])
+    physics_weight = float(cfg["train"].get("physics_weight", 1.0))
 
     opt = Adam(model.parameters(), lr=cfg['train']['lr'], weight_decay=cfg['train']['weight_decay'])
     sched_cfg = cfg["train"].get("scheduler")
@@ -241,6 +267,7 @@ def fit(model, dataset, cfg):
             debug=debug_enable and epoch == 1,
             debug_batches=debug_batches,
             loss_type=loss_type,
+            physics_weight=physics_weight,
         )
         val = evaluate(
             model,
@@ -250,6 +277,7 @@ def fit(model, dataset, cfg):
             debug_batches=debug_batches,
             kcl_tolerance=kcl_tol,
             loss_type=loss_type,
+            physics_weight=physics_weight,
         )
         if scheduler is not None:
             scheduler.step(val["loss"] if isinstance(scheduler, ReduceLROnPlateau) else None)
@@ -310,6 +338,7 @@ def fit(model, dataset, cfg):
         kcl_tolerance=kcl_tol,
         loss_type=loss_type,
         return_loss=True,
+        physics_weight=physics_weight,
     )
     tqdm.write(
         "[TEST] loss {loss:.4e} | rmse_num {num:.4e} | rmse_theta {theta:.4e} | "

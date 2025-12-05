@@ -10,6 +10,7 @@ from src.losses import (
     opf_regression_loss,
     rmse,
 )
+from src.training.train import _compute_loss
 
 
 def test_rmse_with_mask() -> None:
@@ -56,3 +57,49 @@ def test_kcl_quadratic_penalty_positive_when_unbalanced() -> None:
     net_injection = torch.tensor([[0.0, 0.0], [0.0, 0.0]])
     penalty = kcl_quadratic_penalty(net_injection, edge_index, edge_flow, reduction="sum")
     torch.testing.assert_close(penalty, torch.tensor(1.0**2 + 0.5**2 + 1.0**2 + 0.5**2))
+
+
+def test_physics_enhanced_loss_zero_when_balanced() -> None:
+    # Edge 0 -> 1 carries the exact predicted injections, so KCL penalty should vanish.
+    edge_index = torch.tensor([[0], [1]])
+    edge_attr = torch.tensor([[1.0, 1.0]])
+    pred = torch.tensor(
+        [
+            [1.0, 0.5, 1.5, 1.0],   # node 0
+            [-1.0, -0.5, 1.0, 0.0], # node 1
+        ]
+    )
+    target = pred.clone()
+    mask = torch.ones((2, 4), dtype=torch.bool)
+
+    class DummyBatch:
+        def __init__(self) -> None:
+            self.edge_index = edge_index
+            self.edge_attr = edge_attr
+            self.physics_weight = 1.0
+
+    loss = _compute_loss(pred, target, mask, "physics_enhanced", batch=DummyBatch())
+    torch.testing.assert_close(loss, torch.tensor(0.0))
+
+
+def test_physics_enhanced_loss_penalizes_imbalance() -> None:
+    # No angle/voltage error, but net injections are not balanced by flows.
+    edge_index = torch.tensor([[0], [1]])
+    pred = torch.tensor(
+        [
+            [1.0, 0.0, 1.0, 0.0],  # node 0 injects active power
+            [-1.0, 0.0, 1.0, 0.0], # node 1 draws active power
+        ]
+    )
+    target = pred.clone()
+    mask = torch.ones((2, 4), dtype=torch.bool)
+
+    class DummyBatch:
+        def __init__(self) -> None:
+            self.edge_index = edge_index
+            self.edge_attr = None
+            self.physics_weight = 1.0
+
+    loss = _compute_loss(pred, target, mask, "physics_enhanced", batch=DummyBatch())
+    # KCL term: imbalance per node = +/-1, squared and averaged => mean 1.0.
+    torch.testing.assert_close(loss, torch.tensor(1.0))
