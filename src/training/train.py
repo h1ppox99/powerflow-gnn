@@ -354,8 +354,8 @@ def fit(model, dataset, cfg):
         )
     )
     _log_history(history, logging_cfg)
-    _plot_results(history, logging_cfg)
     _baseline_comparison(test)
+    _plot_results(history, logging_cfg)
     return test
 
 

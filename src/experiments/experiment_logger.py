@@ -26,6 +26,7 @@ _FIELDNAMES = [
     "train_loss",
     "train_scheduler",
     "test_loss",
+    "test_mse_num",
     "test_rmse_num",
     "test_rmse_theta",
     "test_mse_p",
@@ -100,6 +101,13 @@ def log_experiment_run(
     config_snapshot = config_text if config_text is not None else _serialize_config(cfg)
     config_summary = _normalize_config(cfg)
 
+    mse_num = metrics.get("mse_num")
+    if mse_num is None and metrics.get("rmse_num") is not None:
+        try:
+            mse_num = float(metrics["rmse_num"]) ** 2
+        except Exception:
+            mse_num = None
+
     row = {
         "timestamp_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "config_path": str(config_path),
@@ -107,6 +115,7 @@ def log_experiment_run(
         "config_hash": _config_hash(config_snapshot),
         **config_summary,
         "test_loss": _safe_float(metrics.get("loss")),
+        "test_mse_num": _safe_float(mse_num),
         "test_rmse_num": _safe_float(metrics.get("rmse_num")),
         "test_rmse_theta": _safe_float(metrics.get("rmse_theta")),
         "test_mse_p": _safe_float(metrics.get("mse_p")),
