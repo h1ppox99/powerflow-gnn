@@ -1,5 +1,5 @@
-timestamp_utc,config_path,config_name,config_hash,model_name,data_backend,data_grid,data_task,train_epochs,train_lr,train_batch_size,train_loss,train_scheduler,test_loss,test_rmse_num,test_rmse_theta,test_mse_p,test_mse_q,test_mse_v,test_mse_theta,test_mean_kcl,config_yaml
-2025-12-04T23:53:11Z,src/config/transformer_baseline.yaml,transformer_baseline.yaml,0bbfd0e80f9c77d94e51aa73b7cc65ca0e0b65ee,transformer,powergraph,IEEE118,nodeopf,50,0.001,32,mse,reduce_on_plateau,0.00022134289571262692,0.010189798037989093,0.010840244691905851,0.00024523854839386986,0.00013823623628964,2.3376186640016177e-05,0.00011751090498039297,0.08295580101284114,"# Transformer baseline matching PowerGraph paper
+timestamp_utc,config_path,config_name,config_hash,model_name,data_backend,data_grid,data_task,train_epochs,train_lr,train_batch_size,train_loss,train_scheduler,test_loss,test_mse_num,test_rmse_num,test_rmse_theta,test_mse_p,test_mse_q,test_mse_v,test_mse_theta,test_mean_kcl,config_yaml
+2025-12-05T03:16:17Z,src/config/transformer_baseline.yaml,transformer_baseline.yaml,0bbfd0e80f9c77d94e51aa73b7cc65ca0e0b65ee,transformer,powergraph,IEEE118,nodeopf,50,0.001,32,mse,reduce_on_plateau,0.00016853774303185527,0.00015104331584426688,0.012289968097772544,0.01802376291849395,0.0003055330345735682,0.00025941853050968477,3.074919378227673e-05,0.00032485602974207756,0.08499682057987559,"# Transformer baseline matching PowerGraph paper
 
 model:
   name: transformer
