@@ -60,12 +60,12 @@ def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_wei
         else:
             edge_flows = _estimate_edge_flows(pred, batch)
             net_injection = torch.stack([pred[:, 0], pred[:, 1]], dim=-1)
-            kcl_mask = mask[:, :2] if mask is not None else None
+            # kcl_mask = mask[:, :2] if mask is not None else None
             physics_penalty = kcl_quadratic_penalty(
                 net_injection,
                 batch.edge_index,
                 edge_flows,
-                mask=kcl_mask,
+                mask=None,
             )
         return loss_num + loss_ang + physics_weight * physics_penalty
     # default: rmse split numeric + angle
