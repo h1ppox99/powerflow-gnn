@@ -44,6 +44,8 @@ def _compute_loss(pred, target, mask, loss_type: str):
         loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
         loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
         return loss_num + loss_ang
+    elif loss_type == "physics_enhanced":
+        pass
     # default: rmse split numeric + angle
     loss_num = rmse(
         pred[:, :3],
