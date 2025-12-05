@@ -3,8 +3,9 @@
 from .graphsage_pi import GraphSAGE_PI
 from .pna_pi import PNA_PI, compute_degree_histogram
 from .transformer_baseline import TransformerBaseline
+from .transformer_vn import TransformerConvVN
 
-__all__ = ["GraphSAGE_PI", "PNA_PI", "compute_degree_histogram", "TransformerBaseline"]
+__all__ = ["GraphSAGE_PI", "PNA_PI", "compute_degree_histogram", "TransformerBaseline", "TransformerConvVN"]
 
 def load_model(cfg: dict, dataset):
     """Load the model based on the configuration and dataset.
@@ -59,6 +60,20 @@ def load_model(cfg: dict, dataset):
         out_dim = data.y.size(-1)
         edge_dim = data.edge_attr.size(-1) if data.edge_attr is not None else None
         return TransformerBaseline(
+            in_dim=in_dim,
+            hidden_dim=cfg["model"]["hidden"],
+            out_dim=out_dim,
+            num_layers=cfg["model"]["num_layers"],
+            heads=cfg["model"].get("heads", 4),
+            dropout=cfg["model"].get("dropout", 0.0),
+            edge_dim=edge_dim,
+        )
+    elif cfg["model"]["name"] == "transformer_vn":
+        data = dataset[0]
+        in_dim = data.x.size(-1)
+        out_dim = data.y.size(-1)
+        edge_dim = data.edge_attr.size(-1) if data.edge_attr is not None else None
+        return TransformerConvVN(
             in_dim=in_dim,
             hidden_dim=cfg["model"]["hidden"],
             out_dim=out_dim,
