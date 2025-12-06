@@ -2,8 +2,10 @@ version = 1
 revision = 3
 requires-python = "==3.10.*"
 resolution-markers = [
-    "sys_platform == 'linux'",
-    "sys_platform == 'win32'",
+    "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux')",
+    "platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32'",
+    "(platform_machine != 'AMD64' and sys_platform == 'win32') or (platform_python_implementation != 'CPython' and sys_platform == 'win32')",
     "sys_platform == 'darwin'",
 ]
 supported-markers = [
@@ -525,6 +527,8 @@ dependencies = [
     { name = "threadpoolctl", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torch-geometric", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch-scatter", version = "2.1.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_machine != 'AMD64' and sys_platform == 'win32') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'win32') or sys_platform == 'darwin'" },
+    { name = "torch-scatter", version = "2.1.2+pt21cu121", source = { registry = "https://data.pyg.org/whl/torch-2.1.0+cu121.html" }, marker = "(platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32')" },
     { name = "torchaudio", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torchvision", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "tqdm", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -578,6 +582,7 @@ requires-dist = [
     { name = "threadpoolctl", specifier = "==3.6.0" },
     { name = "torch", specifier = "==2.1.0+cu121" },
     { name = "torch-geometric", specifier = "==2.6.0" },
+    { name = "torch-scatter", specifier = ">=2.1.2" },
     { name = "torchaudio", specifier = "==2.1.0+cu121" },
     { name = "torchvision", specifier = "==0.16.0+cu121" },
     { name = "tqdm", specifier = "==4.67.1" },
@@ -818,6 +823,30 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/16/e9/057ad2ce57eba4f4af0292e52fa23ced545b4c0cd14a625d144cc0998749/torch_geometric-2.6.0.tar.gz", hash = "sha256:4f610ae17dc84fa0e6dcf498fda7db2cace9c42d8c83de546bbf80884b112ce4", size = 771435, upload-time = "2024-09-13T06:51:09.61Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fc/14/569e932645bd0d91ba792287ce9a5a910b190d76295f28f4281f13633476/torch_geometric-2.6.0-py3-none-any.whl", hash = "sha256:0c72c0195266185a5c705dca457d1838f5605e9cc1c64d7d33900cfdab1f1270", size = 1135602, upload-time = "2024-09-13T06:51:06.859Z" },
+]
+
+[[package]]
+name = "torch-scatter"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "(platform_machine != 'x86_64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux')",
+    "(platform_machine != 'AMD64' and sys_platform == 'win32') or (platform_python_implementation != 'CPython' and sys_platform == 'win32')",
+    "sys_platform == 'darwin'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/ab/2a44ecac0f891dd0d765fc59ac8d277c6283a31907626560e72685df2ed6/torch_scatter-2.1.2.tar.gz", hash = "sha256:69b3aa435f2424ac6a1bfb6ff702da6eb73b33ca0db38fb26989c74159258e47", size = 108045, upload-time = "2023-10-06T08:49:07.081Z" }
+
+[[package]]
+name = "torch-scatter"
+version = "2.1.2+pt21cu121"
+source = { registry = "https://data.pyg.org/whl/torch-2.1.0+cu121.html" }
+resolution-markers = [
+    "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32'",
+]
+wheels = [
+    { url = "https://data.pyg.org/whl/torch-2.1.0%2Bcu121/torch_scatter-2.1.2%2Bpt21cu121-cp310-cp310-linux_x86_64.whl" },
+    { url = "https://data.pyg.org/whl/torch-2.1.0%2Bcu121/torch_scatter-2.1.2%2Bpt21cu121-cp310-cp310-win_amd64.whl" },
 ]
 
 [[package]]
