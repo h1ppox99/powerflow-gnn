@@ -161,7 +161,8 @@ def train_one_epoch(
     debug_batches: int = 1,
     loss_type: str = "mse",
     huber_beta: float = 1.0,
-, physics_weight: float = 1.0):
+    physics_weight: float = 1.0
+):
     model.train()
     total = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):

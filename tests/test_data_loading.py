@@ -27,9 +27,7 @@ def test_powergraph_dataset_batches() -> None:
     assert len(dataset) > 0, "Dataset is empty after processing."
 
     sample = dataset[0]
-    print("Inspecting first sample:")
-    print(f"  x shape        : {sample.x.shape}")
-    print(f"  edge_index     : {sample.edge_index.shape}")
+
 
     # ------------------------------------------------------------------
     # Pseudo node-type recovery (from x[:, 2])
@@ -80,11 +78,7 @@ def test_powergraph_dataset_batches() -> None:
     print(f"Creating DataLoader with batch_size={batch_size}")
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # print elements of the dataset TODO: remove
-    for i, sample in enumerate(dataset):
-        print(f" Sample {i}: x={sample.x.shape}, edge_index={sample.edge_index.shape}, labels = sample.}")
-        if i >= 2:
-            break
+    
     batch = next(iter(loader))
     print("Batch loaded:")
     print(
