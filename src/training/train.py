@@ -21,41 +21,18 @@ from src.losses.physical_loss import nodal_imbalance
 from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
 
-def _masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
-    if mask is not None:
-        pred = pred[mask]
-        target = target[mask]
-    if pred.numel() == 0:
-        return torch.tensor(0.0, device=target.device)
-    return F.mse_loss(pred, target)
-
-
-def _angle_mse(pred_theta: torch.Tensor, target_theta: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
-    diff = torch.atan2(torch.sin(pred_theta - target_theta), torch.cos(pred_theta - target_theta))
-    if mask is not None:
-        diff = diff[mask]
-    if diff.numel() == 0:
-        return torch.tensor(0.0, device=pred_theta.device)
-    return torch.mean(diff**2)
-
 
 def _compute_loss(pred, target, mask, loss_type: str):
-    if loss_type == "mse":
-        loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
-        loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
-        return loss_num + loss_ang
-    # default: rmse split numeric + angle
-    loss_num = rmse(
-        pred[:, :3],
-        target[:, :3],
-        mask[:, :3] if mask is not None else None,
-    )
-    loss_ang = circular_rmse(
-        pred[:, 3],
-        target[:, 3],
-        mask[:, 3] if mask is not None else None,
-    )
-    return loss_num + loss_ang
+    """
+    PowerGraph baseline loss:
+    Simple MSE over all 4 normalized outputs [P, Q, V, theta],
+    with optional node mask.
+    """
+    if mask is not None:
+        pred = pred[mask.any(dim=1)]
+        target = target[mask.any(dim=1)]
+
+    return F.mse_loss(pred, target)
 
 
 class MetricTracker:
