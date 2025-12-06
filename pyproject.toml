@@ -60,6 +60,8 @@ dependencies = [
 [tool.uv]
 index-strategy = "unsafe-best-match"
 
+find-links = ["https://data.pyg.org/whl/torch-2.1.0+cu121.html"]
+
 environments = [
     "sys_platform == 'linux'",
     "sys_platform == 'win32'",
