@@ -1,0 +1,29 @@
+# HH-MPNN with Laplacian PE and Huber loss
+
+model:
+  name: hh_mpnn
+  hidden: 256
+  num_layers: 5
+  heads: 4
+  dropout: 0.0
+
+train:
+  epochs: 50
+  lr: 0.00001
+  weight_decay: 0.00000005
+  batch_size: 32
+  split:
+    train: 0.85
+    val: 0.05
+    test: 0.10
+  loss: huber
+  huber_delta: 1.0
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.1
+    patience: 10
+
+data:
+  backend: powergraph
+  grid: IEEE118
+  task: nodeopf
