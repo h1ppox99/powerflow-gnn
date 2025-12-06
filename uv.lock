@@ -93,6 +93,19 @@ wheels = [
 ]
 
 [[package]]
+name = "axial-positional-embedding"
+version = "0.3.12"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/e6/294c09aa82ccfb8ea18276cbce61964f35758f5de28f2677acf4fd71fcce/axial_positional_embedding-0.3.12.tar.gz", hash = "sha256:10d98f342f8fa0d4d3d20b36ed27fb0fc63f1d398202b9165e07bc9d6130bc17", size = 6312, upload-time = "2025-02-25T17:06:32.783Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/f9/25753b9de3029d3eb2487755520b98eb72b0cb562d8974329c6e19831063/axial_positional_embedding-0.3.12-py3-none-any.whl", hash = "sha256:f5708106b18903c3b99aced0bfa79d1ae6f708dae34f56e641e8c24dbc06b02f", size = 6726, upload-time = "2025-02-25T17:06:31.811Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.10.5"
 source = { registry = "https://pypi.org/simple" }
@@ -165,6 +178,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a9/95/a3dbbb5028f35eafb79008e7522a75244477d2838f38cbb722248dabc2a8/cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c", size = 7615, upload-time = "2023-10-07T05:32:18.335Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30", size = 8321, upload-time = "2023-10-07T05:32:16.783Z" },
+]
+
+[[package]]
+name = "einops"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/81/df4fbe24dff8ba3934af99044188e20a98ed441ad17a274539b74e82e126/einops-0.8.1.tar.gz", hash = "sha256:de5d960a7a761225532e0f1959e5315ebeafc0cd43394732f103ca44b9837e84", size = 54805, upload-time = "2025-02-09T03:17:00.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/62/9773de14fe6c45c23649e98b83231fffd7b9892b6cf863251dc2afa73643/einops-0.8.1-py3-none-any.whl", hash = "sha256:919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737", size = 64359, upload-time = "2025-02-09T03:17:01.998Z" },
 ]
 
 [[package]]
@@ -322,6 +344,19 @@ wheels = [
 ]
 
 [[package]]
+name = "local-attention"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/66/8e7ab34c3c56bf771417ad1a0890d9b867512962e673d8f582bef35884e3/local_attention-1.10.0.tar.gz", hash = "sha256:8fc3846806294cfa48afba7ec60e2407f849e6109638c1fa147fe8fac12fb6df", size = 10729, upload-time = "2025-01-12T16:54:15.898Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/05/b08b55abd1b08376d5c4e13524cf1e6baa63473dee2cd58fd1725aa896a6/local_attention-1.10.0-py3-none-any.whl", hash = "sha256:f558b8a275f8475e16df602f0d856887dd44cd3ef7d4340aced936445b29e326", size = 9334, upload-time = "2025-01-12T16:54:13.741Z" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -454,6 +489,21 @@ wheels = [
 ]
 
 [[package]]
+name = "performer-pytorch"
+version = "1.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "axial-positional-embedding", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "local-attention", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4e/0d/24a3c930a2d0a7e5439219083cbd5ef43ad7f8605078a4243eec50a68893/performer-pytorch-1.1.4.tar.gz", hash = "sha256:90f29ec0417ff68be4cd1c3d6b4005cc23f60a6ea34d182295b11571dab3d53c", size = 14875, upload-time = "2022-02-02T20:34:05.863Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/52/d12a977a3314101c95636ca7c742d829fcc28a9e89282ad4eba89b2801cb/performer_pytorch-1.1.4-py3-none-any.whl", hash = "sha256:8c27835741950c7b5f39d8f98056416b752c4bce9426c4c4c4b9757ba7c55fc7", size = 13314, upload-time = "2022-02-02T20:34:04.211Z" },
+]
+
+[[package]]
 name = "pillow"
 version = "12.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -512,6 +562,7 @@ dependencies = [
     { name = "networkx", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "packaging", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "performer-pytorch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "pillow", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "propcache", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -567,6 +618,7 @@ requires-dist = [
     { name = "networkx", specifier = "==3.4.2" },
     { name = "numpy", specifier = "==1.26.4" },
     { name = "packaging", specifier = "==25.0" },
+    { name = "performer-pytorch", specifier = ">=1.1.4" },
     { name = "pillow", specifier = "==12.0.0" },
     { name = "propcache", specifier = "==0.4.1" },
     { name = "psutil", specifier = "==7.1.3" },

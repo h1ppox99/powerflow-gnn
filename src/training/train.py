@@ -18,8 +18,8 @@ from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 from src.losses.physical_loss import kcl_quadratic_penalty, nodal_imbalance, physics_loss
-from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
+
 
 def _masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
     if mask is not None:
@@ -30,20 +30,24 @@ def _masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.T
     return F.mse_loss(pred, target)
 
 
-def _angle_mse(pred_theta: torch.Tensor, target_theta: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
-    diff = torch.atan2(torch.sin(pred_theta - target_theta), torch.cos(pred_theta - target_theta))
+def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor], beta: float) -> torch.Tensor:
     if mask is not None:
-        diff = diff[mask]
-    if diff.numel() == 0:
-        return torch.tensor(0.0, device=pred_theta.device)
-    return torch.mean(diff**2)
+        pred = pred[mask]
+        target = target[mask]
+    if pred.numel() == 0:
+        return torch.tensor(0.0, device=target.device)
+    return F.smooth_l1_loss(pred, target, beta=beta)
 
 
-def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_weight: float = 1.0) -> torch.Tensor:
+def _compute_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0, batch=None, *, physics_weight: float = 1.0) -> torch.Tensor:
+    """
+    Loss over normalized outputs [P, Q, V, theta] with optional node mask.
+    Supports: mse (default) or huber.
+    """
+    if loss_type == "huber":
+        return _masked_huber(pred, target, mask, beta=huber_beta)
     if loss_type == "mse":
-        loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
-        loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
-        return loss_num + loss_ang
+        return _masked_mse(pred, target, mask)
     elif loss_type == "physics_enhanced" and batch is not None:
         maxs = batch.maxs # Nécessaire pour dénormaliser si stocké dans batch
         loss_num = rmse(
@@ -63,25 +67,15 @@ def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_wei
         maxs_y=maxs[0] if maxs.dim() > 1 else maxs # Gestion du batching de maxs
     )
         return loss_num + loss_ang + physics_weight * phy_term
-    # default: rmse split numeric + angle
-    loss_num = rmse(
-        pred[:, :3],
-        target[:, :3],
-        mask[:, :3] if mask is not None else None,
-    )
-    loss_ang = circular_rmse(
-        pred[:, 3],
-        target[:, 3],
-        mask[:, 3] if mask is not None else None,
-    )
-    return loss_num + loss_ang
+    raise ValueError(f"Unsupported loss_type {loss_type!r}; use 'mse' or 'huber' or 'physics_enhanced'.")
 
 
 class MetricTracker:
     """Accumulate per-component MSE/RMSE and KCL residual."""
 
-    def __init__(self, loss_type: str = "rmse", physics_weight: float = 1.0) -> None:
+    def __init__(self, loss_type: str = "mse", huber_beta: float = 1.0, physics_weight: float = 1.0) -> None:
         self.loss_type = loss_type
+        self.huber_beta = huber_beta
         self.physics_weight = physics_weight
         self.reset()
 
@@ -114,7 +108,7 @@ class MetricTracker:
             self.count["theta"] += diff_theta.numel()
 
         weight = self.physics_weight if physics_weight is None else physics_weight
-        loss = _compute_loss(pred, target, mask, self.loss_type, batch=batch, physics_weight=weight)
+        loss = _compute_loss(pred, target, mask, self.loss_type, batch=batch, physics_weight=weight, huber_beta=self.huber_beta)
         self.loss_sum += loss.item() * pred.size(0)
         self.nodes += pred.size(0)
 
@@ -151,7 +145,17 @@ class MetricTracker:
         return out
 
 
-def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1, loss_type: str = "rmse", physics_weight: float = 1.0):
+def train_one_epoch(
+    model,
+    loader,
+    optimizer,
+    device,
+    *,
+    debug: bool = False,
+    debug_batches: int = 1,
+    loss_type: str = "mse",
+    huber_beta: float = 1.0,
+, physics_weight: float = 1.0):
     model.train()
     total = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
@@ -160,7 +164,7 @@ def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, de
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        loss = _compute_loss(y_hat, batch.y, mask, loss_type, batch=batch, physics_weight=physics_weight)
+        loss = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta, batch=batch, physics_weight=physics_weight)
 
         optimizer.zero_grad()
         loss.backward()
@@ -177,12 +181,13 @@ def evaluate(
     debug: bool = False,
     debug_batches: int = 1,
     kcl_tolerance: float = 1e-2,
-    loss_type: str = "rmse",
+    loss_type: str = "mse",
+    huber_beta: float = 1.0,
     return_loss: bool = False,
     physics_weight: float = 1.0,
 ):
     model.eval()
-    tracker = MetricTracker(loss_type=loss_type, physics_weight=physics_weight)
+    tracker = MetricTracker(loss_type=loss_type, huber_beta=huber_beta, physics_weight=physics_weight)
     for step, batch in enumerate(tqdm(loader, desc="eval", leave=False)):
         batch = batch.to(device)
         y_hat = model(batch)
@@ -202,7 +207,8 @@ def fit(model, dataset, cfg):
     debug_batches = int(debug_cfg.get("batches", 1))
     kcl_tol = float(debug_cfg.get("kcl_tolerance", 1e-2))
     history: List[dict[str, float]] = []
-    loss_type = cfg.get("train", {}).get("loss", "rmse").lower()
+    loss_type = cfg.get("train", {}).get("loss", "mse").lower()
+    huber_beta = float(cfg.get("train", {}).get("huber_beta", 1.0))
 
     n = len(dataset)
     split_cfg = cfg["train"].get("split", {"train": 0.8, "val": 0.1, "test": 0.1})
@@ -263,6 +269,7 @@ def fit(model, dataset, cfg):
             debug_batches=debug_batches,
             loss_type=loss_type,
             physics_weight=physics_weight,
+            huber_beta=huber_beta,
         )
         val = evaluate(
             model,
@@ -272,6 +279,7 @@ def fit(model, dataset, cfg):
             debug_batches=debug_batches,
             kcl_tolerance=kcl_tol,
             loss_type=loss_type,
+            huber_beta=huber_beta,
             physics_weight=physics_weight,
         )
         if scheduler is not None:
@@ -332,6 +340,7 @@ def fit(model, dataset, cfg):
         debug_batches=debug_batches,
         kcl_tolerance=kcl_tol,
         loss_type=loss_type,
+        huber_beta=huber_beta,
         return_loss=True,
         physics_weight=physics_weight,
     )
