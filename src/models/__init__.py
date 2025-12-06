@@ -4,8 +4,16 @@ from .graphsage_pi import GraphSAGE_PI
 from .pna_pi import PNA_PI, compute_degree_histogram
 from .transformer_baseline import TransformerBaseline
 from .transformer_vn import TransformerConvVN
+from .hh_mpnn import HHMPNN, build_model as build_hh_mpnn
 
-__all__ = ["GraphSAGE_PI", "PNA_PI", "compute_degree_histogram", "TransformerBaseline", "TransformerConvVN"]
+__all__ = [
+    "GraphSAGE_PI",
+    "PNA_PI",
+    "compute_degree_histogram",
+    "TransformerBaseline",
+    "TransformerConvVN",
+    "HHMPNN",
+]
 
 def load_model(cfg: dict, dataset):
     """Load the model based on the configuration and dataset.
@@ -82,5 +90,7 @@ def load_model(cfg: dict, dataset):
             dropout=cfg["model"].get("dropout", 0.0),
             edge_dim=edge_dim,
         )
+    elif cfg["model"]["name"] == "hh_mpnn":
+        return build_hh_mpnn(cfg, dataset)
     else:
         raise ValueError(f"Unknown model name: {cfg['model']['name']}")
