@@ -3,7 +3,7 @@
 from __future__ import annotations
 import pytest
 import torch
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader #type: ignore[import]
 
 from data.utils_data import (
     list_available_powergraph_datasets,
@@ -37,6 +37,11 @@ def test_powergraph_dataset_batches() -> None:
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     print(f" DataLoader created (num_samples={len(dataset)})")
 
+    # print elements of the dataset TODO: remove
+    for i, sample in enumerate(dataset):
+        print(f" Sample {i}: x={sample.x.shape}, edge_index={sample.edge_index.shape}, labels = sample.}")
+        if i >= 2:
+            break
     batch = next(iter(loader))
     print(
         f" Batch loaded: x={batch.x.shape}, "

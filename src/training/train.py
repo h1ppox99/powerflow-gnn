@@ -17,7 +17,7 @@ from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
-from src.losses.physical_loss import kcl_quadratic_penalty, nodal_imbalance
+from src.losses.physical_loss import kcl_quadratic_penalty, nodal_imbalance, physics_loss
 from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
 
@@ -44,7 +44,8 @@ def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_wei
         loss_num = _masked_mse(pred[:, :3], target[:, :3], mask[:, :3] if mask is not None else None)
         loss_ang = _angle_mse(pred[:, 3], target[:, 3], mask[:, 3] if mask is not None else None)
         return loss_num + loss_ang
-    elif loss_type == "physics_enhanced":
+    elif loss_type == "physics_enhanced" and batch is not None:
+        maxs = batch.maxs # Nécessaire pour dénormaliser si stocké dans batch
         loss_num = rmse(
             pred[:, :3],
             target[:, :3],
@@ -55,19 +56,13 @@ def _compute_loss(pred, target, mask, loss_type: str, batch=None, *, physics_wei
             target[:, 3],
             mask[:, 3] if mask is not None else None,
         )
-        if batch is None:
-            physics_penalty = torch.tensor(0.0, device=pred.device)
-        else:
-            edge_flows = _estimate_edge_flows(pred, batch)
-            net_injection = torch.stack([pred[:, 0], pred[:, 1]], dim=-1)
-            # kcl_mask = mask[:, :2] if mask is not None else None
-            physics_penalty = kcl_quadratic_penalty(
-                net_injection,
-                batch.edge_index,
-                edge_flows,
-                mask=None,
-            )
-        return loss_num + loss_ang + physics_weight * physics_penalty
+        phy_term = physics_loss(
+        pred=pred, 
+        edge_index=batch.edge_index, 
+        edge_attr=batch.edge_attr_real, # ATTENTION: Doit être les vrais G/B
+        maxs_y=maxs[0] if maxs.dim() > 1 else maxs # Gestion du batching de maxs
+    )
+        return loss_num + loss_ang + physics_weight * phy_term
     # default: rmse split numeric + angle
     loss_num = rmse(
         pred[:, :3],

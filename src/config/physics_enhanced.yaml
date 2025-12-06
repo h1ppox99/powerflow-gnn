@@ -15,7 +15,7 @@ train:
   weight_decay: 0.0
   batch_size: 16
   loss: physics_enhanced
-  physics_weight: 10000
+  physics_weight: 1e-5
 
 data:
   backend: powergraph   

@@ -130,6 +130,7 @@ class PowerGrid(InMemoryDataset):
         
         # Normalize edge attributes (Conductance/Susceptance)
         edge_attr = torch.tensor(e_attr, dtype=torch.float)
+        edge_attr_real = edge_attr  # Store unnormalized for physics loss
         edge_attr = torch.nn.functional.normalize(edge_attr, dim=0)
 
         # 4. Process Node Features (keep cols 0,1,3; drop col 2)
@@ -165,6 +166,7 @@ class PowerGrid(InMemoryDataset):
                 x=sample_x / maxsX,       # Normalize Inputs
                 edge_index=edge_index,    # Topology
                 edge_attr=edge_attr,      # Edge Features
+                edge_attr_real=edge_attr_real,  # Store unnormalized for physics loss
                 y=sample_y / maxsY,       # Normalize Targets
                 maxs=maxsY,               # Store for de-normalization
                 mask=mask                 # Boolean mask for loss calculation

@@ -1,6 +1,6 @@
 # Entry point for launching experiments
 
-import argparse, yaml
+import argparse, yaml #type: ignore[import]
 from src.models.graphsage_pi import GraphSAGE_PI
 from src.training.train import fit
 from pathlib import Path
