@@ -48,26 +48,32 @@ def _compute_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0, b
         return _masked_huber(pred, target, mask, beta=huber_beta)
     if loss_type == "mse":
         return _masked_mse(pred, target, mask)
-    elif loss_type == "physics_enhanced" and batch is not None:
+    elif loss_type == "physics_mse" :
+        if batch is None:
+            raise ValueError("batch must be provided for physics_mse loss computation.")
         maxs = batch.maxs # Nécessaire pour dénormaliser si stocké dans batch
-        loss_num = rmse(
-            pred[:, :3],
-            target[:, :3],
-            mask[:, :3] if mask is not None else None,
-        )
-        loss_ang = circular_rmse(
-            pred[:, 3],
-            target[:, 3],
-            mask[:, 3] if mask is not None else None,
-        )
+        
         phy_term = physics_loss(
-        pred=pred, 
-        edge_index=batch.edge_index, 
-        edge_attr=batch.edge_attr_real, # ATTENTION: Doit être les vrais G/B
-        maxs_y=maxs[0] if maxs.dim() > 1 else maxs # Gestion du batching de maxs
-    )
-        return loss_num + loss_ang + physics_weight * phy_term
-    raise ValueError(f"Unsupported loss_type {loss_type!r}; use 'mse' or 'huber' or 'physics_enhanced'.")
+            pred=pred,
+            edge_index=batch.edge_index,
+            edge_attr=batch.edge_attr_real, # ATTENTION: Doit être les vrais G/B
+            maxs_y=maxs[0] if maxs.dim() > 1 else maxs # Gestion du batching de maxs
+        )
+        return _masked_mse(pred, target, mask) + physics_weight * phy_term
+    elif loss_type == "physics_huber":
+        if batch is None:
+            raise ValueError("batch must be provided for physics_huber loss")
+        maxs = batch.maxs # Nécessaire pour dénormaliser si stocké dans batch
+        
+        phy_term = physics_loss(
+            pred=pred,
+            edge_index=batch.edge_index,
+            edge_attr=batch.edge_attr_real, # ATTENTION: Doit être les vrais G/B
+            maxs_y=maxs[0] if maxs.dim() > 1 else maxs # Gestion du batching de maxs
+        )
+        return _masked_huber(pred, target, mask, beta=huber_beta) + physics_weight * phy_term
+
+    raise ValueError(f"Unsupported loss_type {loss_type!r}; use 'mse' or 'huber' or 'physics_mse' or 'physics_huber'.")
 
 
 class MetricTracker:

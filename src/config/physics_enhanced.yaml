@@ -14,7 +14,7 @@ train:
   lr: !!float 1e-3
   weight_decay: 0.0
   batch_size: 16
-  loss: physics_enhanced
+  loss: physics_mse
   physics_weight: 1e-5
 
 data:
