@@ -18,28 +18,45 @@ from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 from src.losses.physical_loss import nodal_imbalance
-from src.losses.regression_loss import rmse, circular_rmse
 from src.visualization.visualize_losses import plot_training_curves
 
 
-def _compute_loss(pred, target, mask, loss_type: str):
-    """
-    PowerGraph baseline loss:
-    Simple MSE over all 4 normalized outputs [P, Q, V, theta],
-    with optional node mask.
-    """
+def _masked_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
     if mask is not None:
-        pred = pred[mask.any(dim=1)]
-        target = target[mask.any(dim=1)]
-
+        pred = pred[mask]
+        target = target[mask]
+    if pred.numel() == 0:
+        return torch.tensor(0.0, device=target.device)
     return F.mse_loss(pred, target)
+
+
+def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor], beta: float) -> torch.Tensor:
+    if mask is not None:
+        pred = pred[mask]
+        target = target[mask]
+    if pred.numel() == 0:
+        return torch.tensor(0.0, device=target.device)
+    return F.smooth_l1_loss(pred, target, beta=beta)
+
+
+def _compute_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0):
+    """
+    Loss over normalized outputs [P, Q, V, theta] with optional node mask.
+    Supports: mse (default) or huber.
+    """
+    if loss_type == "huber":
+        return _masked_huber(pred, target, mask, beta=huber_beta)
+    if loss_type == "mse":
+        return _masked_mse(pred, target, mask)
+    raise ValueError(f"Unsupported loss_type {loss_type!r}; use 'mse' or 'huber'.")
 
 
 class MetricTracker:
     """Accumulate per-component MSE/RMSE and KCL residual."""
 
-    def __init__(self, loss_type: str = "rmse") -> None:
+    def __init__(self, loss_type: str = "mse", huber_beta: float = 1.0) -> None:
         self.loss_type = loss_type
+        self.huber_beta = huber_beta
         self.reset()
 
     def reset(self) -> None:
@@ -70,7 +87,7 @@ class MetricTracker:
             self.sse["theta"] += torch.sum(diff_theta**2).item()
             self.count["theta"] += diff_theta.numel()
 
-        loss = _compute_loss(pred, target, mask, self.loss_type)
+        loss = _compute_loss(pred, target, mask, self.loss_type, huber_beta=self.huber_beta)
         self.loss_sum += loss.item() * pred.size(0)
         self.nodes += pred.size(0)
 
@@ -107,7 +124,17 @@ class MetricTracker:
         return out
 
 
-def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, debug_batches: int = 1, loss_type: str = "rmse"):
+def train_one_epoch(
+    model,
+    loader,
+    optimizer,
+    device,
+    *,
+    debug: bool = False,
+    debug_batches: int = 1,
+    loss_type: str = "mse",
+    huber_beta: float = 1.0,
+):
     model.train()
     total = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
@@ -116,7 +143,7 @@ def train_one_epoch(model, loader, optimizer, device, *, debug: bool = False, de
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        loss = _compute_loss(y_hat, batch.y, mask, loss_type)
+        loss = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta)
 
         optimizer.zero_grad()
         loss.backward()
@@ -133,11 +160,12 @@ def evaluate(
     debug: bool = False,
     debug_batches: int = 1,
     kcl_tolerance: float = 1e-2,
-    loss_type: str = "rmse",
+    loss_type: str = "mse",
+    huber_beta: float = 1.0,
     return_loss: bool = False,
 ):
     model.eval()
-    tracker = MetricTracker(loss_type=loss_type)
+    tracker = MetricTracker(loss_type=loss_type, huber_beta=huber_beta)
     for step, batch in enumerate(tqdm(loader, desc="eval", leave=False)):
         batch = batch.to(device)
         y_hat = model(batch)
@@ -157,7 +185,8 @@ def fit(model, dataset, cfg):
     debug_batches = int(debug_cfg.get("batches", 1))
     kcl_tol = float(debug_cfg.get("kcl_tolerance", 1e-2))
     history: List[dict[str, float]] = []
-    loss_type = cfg.get("train", {}).get("loss", "rmse").lower()
+    loss_type = cfg.get("train", {}).get("loss", "mse").lower()
+    huber_beta = float(cfg.get("train", {}).get("huber_beta", 1.0))
 
     n = len(dataset)
     split_cfg = cfg["train"].get("split", {"train": 0.8, "val": 0.1, "test": 0.1})
@@ -216,6 +245,7 @@ def fit(model, dataset, cfg):
             debug=debug_enable and epoch == 1,
             debug_batches=debug_batches,
             loss_type=loss_type,
+            huber_beta=huber_beta,
         )
         val = evaluate(
             model,
@@ -225,6 +255,7 @@ def fit(model, dataset, cfg):
             debug_batches=debug_batches,
             kcl_tolerance=kcl_tol,
             loss_type=loss_type,
+            huber_beta=huber_beta,
         )
         if scheduler is not None:
             scheduler.step(val["loss"] if isinstance(scheduler, ReduceLROnPlateau) else None)
@@ -284,6 +315,7 @@ def fit(model, dataset, cfg):
         debug_batches=debug_batches,
         kcl_tolerance=kcl_tol,
         loss_type=loss_type,
+        huber_beta=huber_beta,
         return_loss=True,
     )
     tqdm.write(
