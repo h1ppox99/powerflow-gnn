@@ -2,14 +2,15 @@
 
 model:
   name: hh_mpnn
-  hidden: 256
-  num_layers: 5
+  hidden: 384
+  num_layers: 7
   heads: 4
   dropout: 0.0
+  pe_dims: 32
 
 train:
   epochs: 50
-  lr: 0.00001
+  lr: 0.00002
   weight_decay: 0.00000005
   batch_size: 32
   split:

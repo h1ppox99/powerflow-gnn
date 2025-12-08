@@ -45,6 +45,7 @@ class HHMPNNConfig:
     dropout: float = 0.0
     edge_dim: Optional[int] = None
     attention: str = "mha"  # "mha" or "performer"
+    pe_dims: int = 5
 
 
 class HHMPNN(nn.Module):
@@ -52,14 +53,15 @@ class HHMPNN(nn.Module):
 
     def __init__(self, cfg: HHMPNNConfig) -> None:
         super().__init__()
+        self.cfg = cfg
         h = cfg.hidden_dim
         attn_type = cfg.attention.lower()
         self.use_performer = attn_type == "performer" and SelfAttention is not None
         self._pe_cache: dict[str, torch.Tensor] = {}
 
-        # Type-specific node encoders (PQ, PV, Slack). Input: x + 5-d PE placeholder.
+        # Type-specific node encoders (PQ, PV, Slack). Input: x + PE.
         self.node_encoders = nn.ModuleList(
-            [_make_mlp(cfg.in_dim + 5, h, h) for _ in range(3)]
+            [_make_mlp(cfg.in_dim + cfg.pe_dims, h, h) for _ in range(3)]
         )
 
         # Single edge encoder (edges are homogeneous in this benchmark).
@@ -103,7 +105,7 @@ class HHMPNN(nn.Module):
             global_out = x_padded + attn_out
         return global_out, mask
 
-    def _compute_lap_pe(self, edge_index: torch.Tensor, node_mask: torch.Tensor, k: int = 5) -> torch.Tensor:
+    def _compute_lap_pe(self, edge_index: torch.Tensor, node_mask: torch.Tensor, k: int) -> torch.Tensor:
         """Compute LapPE for a single graph defined by node_mask."""
         device = edge_index.device
         dtype = torch.float
@@ -135,7 +137,7 @@ class HHMPNN(nn.Module):
             evecs = torch.cat([evecs, pad], dim=1)
         return evecs[:, :k]
 
-    def _get_pe(self, edge_index: torch.Tensor, batch: torch.Tensor, num_nodes: int, k: int = 5) -> torch.Tensor:
+    def _get_pe(self, edge_index: torch.Tensor, batch: torch.Tensor, num_nodes: int, k: int) -> torch.Tensor:
         """Return LapPE per node, computing once per unique topology."""
         pe = torch.zeros(num_nodes, k, device=edge_index.device, dtype=torch.float)
         unique_graphs = batch.unique(sorted=True)
@@ -160,7 +162,7 @@ class HHMPNN(nn.Module):
 
         pe = getattr(data, "pe", None)
         if pe is None:
-            pe = self._get_pe(edge_index, batch, num_nodes=x.size(0), k=5).to(x.dtype)
+            pe = self._get_pe(edge_index, batch, num_nodes=x.size(0), k=self.cfg.pe_dims).to(x.dtype)
 
         h_nodes = x.new_zeros(x.size(0), self.node_encoders[0][0].out_features)
         for t in range(len(self.node_encoders)):
@@ -212,5 +214,6 @@ def build_model(cfg: dict, dataset) -> HHMPNN:
         dropout=cfg["model"].get("dropout", 0.0),
         edge_dim=data.edge_attr.size(-1) if getattr(data, "edge_attr", None) is not None else None,
         attention=cfg["model"].get("attention", "mha"),
+        pe_dims=cfg["model"].get("pe_dims", 5),
     )
     return HHMPNN(model_cfg)
