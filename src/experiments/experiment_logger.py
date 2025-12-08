@@ -97,8 +97,8 @@ def log_experiment_run(
         log_path: CSV file to append to (default: ``experiment_runs.csv`` at repo root).
     """
     config_path = Path(config_path)
-    config_text = _read_config_text(config_path)
-    config_snapshot = config_text if config_text is not None else _serialize_config(cfg)
+    # Store config as a single-line JSON string to avoid CSV row breaks.
+    config_snapshot = _serialize_config(cfg)
     config_summary = _normalize_config(cfg)
 
     mse_num = metrics.get("mse_num")

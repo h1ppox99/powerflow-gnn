@@ -38,6 +38,12 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
+    # Log configuration snapshot at launch (before training), to keep a record per run.
+    try:
+        log_experiment_run(args.config, cfg, {}, log_path="experiment_runs.csv")
+    except Exception as exc:  # pragma: no cover - best-effort logging
+        print(f"Warning: failed to record config snapshot: {exc}")
+
     dataset = load_dataset(cfg)
     model = load_model(cfg, dataset)
     test_metrics = fit(model, dataset, cfg)
