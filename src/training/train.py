@@ -39,6 +39,19 @@ def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch
     return F.smooth_l1_loss(pred, target, beta=beta)
 
 
+def _metric_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    """Pure masked MSE for reporting/selection, independent of training loss type."""
+    return _masked_mse(pred, target, mask)
+
+
+def _supervised_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0) -> torch.Tensor:
+    """Only the supervised term (MSE/Huber), no physics penalty."""
+    if loss_type == "huber":
+        return _masked_huber(pred, target, mask, beta=huber_beta)
+    # default to mse
+    return _masked_mse(pred, target, mask)
+
+
 def _compute_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0, batch=None, *, physics_weight: float = 1.0) -> torch.Tensor:
     """
     Loss over normalized outputs [P, Q, V, theta] with optional node mask.
@@ -113,8 +126,8 @@ class MetricTracker:
             self.sse["theta"] += torch.sum(diff_theta**2).item()
             self.count["theta"] += diff_theta.numel()
 
-        weight = self.physics_weight if physics_weight is None else physics_weight
-        loss = _compute_loss(pred, target, mask, self.loss_type, batch=batch, physics_weight=weight, huber_beta=self.huber_beta)
+        # Metrics/reporting: always pure MSE on all valid nodes.
+        loss = _metric_mse(pred, target, mask)
         self.loss_sum += loss.item() * pred.size(0)
         self.nodes += pred.size(0)
 
@@ -164,20 +177,24 @@ def train_one_epoch(
     physics_weight: float = 1.0
 ):
     model.train()
-    total = 0.0
+    total_sup = 0.0
+    total_nodes = 0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
         batch = batch.to(device)
         mask = getattr(batch, "mask", None)
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        loss = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta, batch=batch, physics_weight=physics_weight)
+        loss_total = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta, batch=batch, physics_weight=physics_weight)
+        # Reporting uses pure MSE regardless of training loss.
+        loss_sup = _metric_mse(y_hat, batch.y, mask)
 
         optimizer.zero_grad()
-        loss.backward()
+        loss_total.backward()
         optimizer.step()
-        total += loss.item() * batch.num_nodes
-    return total / sum(b.num_nodes for b in loader.dataset)
+        total_sup += loss_sup.item() * batch.num_nodes
+        total_nodes += batch.num_nodes
+    return total_sup / max(total_nodes, 1)
 
 @torch.no_grad()
 def evaluate(
