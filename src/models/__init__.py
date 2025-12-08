@@ -5,6 +5,7 @@ from .pna_pi import PNA_PI, compute_degree_histogram
 from .transformer_baseline import TransformerBaseline
 from .transformer_vn import TransformerConvVN
 from .hh_mpnn import HHMPNN, build_model as build_hh_mpnn
+from .hhn_one_attention import HHNOneAttention, build_model as build_hhn_one_attention
 
 __all__ = [
     "GraphSAGE_PI",
@@ -13,6 +14,7 @@ __all__ = [
     "TransformerBaseline",
     "TransformerConvVN",
     "HHMPNN",
+    "HHNOneAttention",
 ]
 
 def load_model(cfg: dict, dataset):
@@ -92,5 +94,7 @@ def load_model(cfg: dict, dataset):
         )
     elif cfg["model"]["name"] == "hh_mpnn":
         return build_hh_mpnn(cfg, dataset)
+    elif cfg["model"]["name"] == "hhn_one_attention":
+        return build_hhn_one_attention(cfg, dataset)
     else:
         raise ValueError(f"Unknown model name: {cfg['model']['name']}")
