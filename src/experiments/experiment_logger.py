@@ -26,6 +26,7 @@ _FIELDNAMES = [
     "train_loss",
     "train_scheduler",
     "test_loss",
+    "total_mse",
     "test_mse_num",
     "test_rmse_num",
     "test_rmse_theta",
@@ -81,6 +82,27 @@ def _serialize_config(cfg: Mapping[str, object]) -> str:
     return json.dumps(cfg, sort_keys=True, default=str)
 
 
+def _ensure_log_header(log_path: Path) -> bool:
+    """Ensure CSV header matches current schema; rewrite if columns changed."""
+    if not log_path.exists():
+        return False
+    try:
+        with log_path.open("r", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames == _FIELDNAMES:
+                return True
+            rows = list(reader)
+        with log_path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=_FIELDNAMES)
+            writer.writeheader()
+            for row in rows:
+                normalized = {key: row.get(key, "") for key in _FIELDNAMES}
+                writer.writerow(normalized)
+        return True
+    except Exception:
+        return False
+
+
 def log_experiment_run(
     config_path: str | Path,
     cfg: Mapping[str, object],
@@ -115,6 +137,9 @@ def log_experiment_run(
         "config_hash": _config_hash(config_snapshot),
         **config_summary,
         "test_loss": _safe_float(metrics.get("loss")),
+        "total_mse": _safe_float(
+            metrics.get("total_mse", metrics.get("loss_mse", metrics.get("mse")))
+        ),
         "test_mse_num": _safe_float(mse_num),
         "test_rmse_num": _safe_float(metrics.get("rmse_num")),
         "test_rmse_theta": _safe_float(metrics.get("rmse_theta")),
@@ -128,7 +153,7 @@ def log_experiment_run(
 
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    exists = log_path.exists()
+    exists = _ensure_log_header(log_path)
     clean_row = {key: ("" if row.get(key) is None else row.get(key, "")) for key in _FIELDNAMES}
     with log_path.open("a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=_FIELDNAMES)
