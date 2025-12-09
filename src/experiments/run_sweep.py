@@ -12,6 +12,7 @@ from src.models import load_model
 from src.training.train import fit
 from src.experiments.experiment_logger import log_experiment_run
 from src.experiments.run_experiment import load_dataset
+from src.visualization.plot_pareto_frontier import plot_pareto_frontier
 
 def set_nested_value(d, path, value):
     """Sets a value in a nested dictionary using a dot-notation string (e.g. 'train.lr')."""
@@ -60,7 +61,7 @@ def main():
         print(f"Sweeping '{args.param}' (Linear Scale): {values}")
 
     # Output directory
-    curves_dir = Path("experiment_curves") / args.param.replace(".", "_")
+    curves_dir = Path("output/experiment_curves") / args.param.replace(".", "_")
     curves_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading dataset (shared across sweep)...")
@@ -78,8 +79,10 @@ def main():
 
         # Configure unique logging folder
         temp_dir_name = f"sweep_{args.param}_{val:.2e}".replace(".", "_")
-        temp_output_dir = Path("output") / temp_dir_name
-        cfg.setdefault("logging", {})["output_dir"] = str(temp_output_dir)
+        if "logging" not in cfg:
+            temp_output_dir = Path("output") / "logs" / temp_dir_name
+            cfg.setdefault("logging", {})["output_dir"] = str(temp_output_dir)
+        
 
         # 4. Train
         try:
@@ -104,6 +107,15 @@ def main():
             }, f, indent=2)
             
         print(f"Saved results to {save_file}")
+
+        # --- INTEGRATION: Auto-plot the Pareto Frontier ---
+    # Only try to plot if we swept physics_weight, or if you want it always:
+        try:
+            print("Generating Pareto plot...")
+            # We turn off show_plot=False so it doesn't block the script execution
+            plot_pareto_frontier(curves_dir, show_plot=False)
+        except Exception as e:
+            print(f"Could not generate plot: {e}")
         
         # Cleanup temp logs (optional)
         # shutil.rmtree(temp_output_dir)

@@ -16,7 +16,7 @@ SCRIPT="src/experiments/run_sweep.py"
 PARAM="train.physics_weight"
 START="-5"  
 STOP="3"    
-STEPS="9"   # 9 steps: 1e-5, 1e-4, ..., 1e3
+STEPS="20"   # 9 steps: 1e-5, 1e-4, ..., 1e3
 FLAGS="--log"
 
 echo "========================================================"

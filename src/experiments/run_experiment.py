@@ -2,7 +2,6 @@
 
 import argparse, yaml #type: ignore[import]
 from copy import deepcopy
-from src.models.graphsage_pi import GraphSAGE_PI
 from src.training.train import fit
 from pathlib import Path
 from src.models import load_model
