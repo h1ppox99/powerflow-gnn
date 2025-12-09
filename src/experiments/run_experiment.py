@@ -1,6 +1,7 @@
 # Entry point for launching experiments
 
 import argparse, yaml #type: ignore[import]
+from copy import deepcopy
 from src.models.graphsage_pi import GraphSAGE_PI
 from src.training.train import fit
 from pathlib import Path
@@ -37,13 +38,14 @@ def main():
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+    cfg_at_launch = deepcopy(cfg)
 
     dataset = load_dataset(cfg)
     model = load_model(cfg, dataset)
     test_metrics = fit(model, dataset, cfg)
 
     try:
-        log_experiment_run(args.config, cfg, test_metrics)
+        log_experiment_run(args.config, cfg_at_launch, test_metrics)
     except Exception as exc:  # pragma: no cover - best-effort logging
         print(f"Warning: failed to record experiment in shared CSV: {exc}")
 

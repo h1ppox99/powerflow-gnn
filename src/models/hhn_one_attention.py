@@ -1,10 +1,10 @@
-"""HH-MPNN hybrid GNN+attention model (simplified for OPF bus data)."""
+"""HH-MPNN variant with a single global attention applied after message passing."""
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Optional
-import hashlib
 
 import torch
 import torch.nn as nn
@@ -12,11 +12,11 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.utils import to_dense_batch
 
-# Optional Performer backend
 try:
     from performer_pytorch import SelfAttention
 except ImportError:  # pragma: no cover - optional
     SelfAttention = None
+
 
 def _make_mlp(in_dim: int, hidden_dim: int, out_dim: int) -> nn.Sequential:
     return nn.Sequential(
@@ -27,16 +27,12 @@ def _make_mlp(in_dim: int, hidden_dim: int, out_dim: int) -> nn.Sequential:
 
 
 def _infer_node_types(node_type_feat: torch.Tensor) -> torch.Tensor:
-    """
-    Infer discrete node types from normalized NodeType feature (expected ~{1/3, 2/3, 1}).
-    Maps to 0=PQ, 1=PV, 2=Slack.
-    """
-    scaled = torch.round(node_type_feat * 3.0).clamp(min=1, max=3)  # -> {1,2,3}
-    return (scaled - 1).long()  # -> {0,1,2}
+    scaled = torch.round(node_type_feat * 3.0).clamp(min=1, max=3)
+    return (scaled - 1).long()
 
 
 @dataclass
-class HHMPNNConfig:
+class HHNOneAttentionConfig:
     in_dim: int
     out_dim: int
     hidden_dim: int = 256
@@ -48,10 +44,10 @@ class HHMPNNConfig:
     pe_dims: int = 5
 
 
-class HHMPNN(nn.Module):
-    """Five-layer heterogeneous MPNN + global attention with type-specific enc/dec."""
+class HHNOneAttention(nn.Module):
+    """Message passing stack, then a single global attention and fusion."""
 
-    def __init__(self, cfg: HHMPNNConfig) -> None:
+    def __init__(self, cfg: HHNOneAttentionConfig) -> None:
         super().__init__()
         self.cfg = cfg
         h = cfg.hidden_dim
@@ -59,26 +55,21 @@ class HHMPNN(nn.Module):
         self.use_performer = attn_type == "performer" and SelfAttention is not None
         self._pe_cache: dict[str, torch.Tensor] = {}
 
-        # Type-specific node encoders (PQ, PV, Slack). Input: x + PE.
         self.node_encoders = nn.ModuleList(
             [_make_mlp(cfg.in_dim + cfg.pe_dims, h, h) for _ in range(3)]
         )
 
-        # Single edge encoder (edges are homogeneous in this benchmark).
         if cfg.edge_dim is not None:
             self.edge_encoder = _make_mlp(cfg.edge_dim, h, h)
         else:
             self.edge_encoder = None
             self.edge_bias = nn.Parameter(torch.zeros(h))
 
-        # Message passing layers
         self.edge_updates = nn.ModuleList()
         self.node_updates = nn.ModuleList()
-        self.fusions = nn.ModuleList()
         for _ in range(cfg.num_layers):
             self.edge_updates.append(_make_mlp(3 * h, h, h))
             self.node_updates.append(_make_mlp(2 * h, h, h))
-            self.fusions.append(_make_mlp(h, h, h))
 
         if self.use_performer:
             self.attn = SelfAttention(
@@ -90,23 +81,12 @@ class HHMPNN(nn.Module):
             )
         else:
             self.attn = nn.MultiheadAttention(h, cfg.heads, dropout=cfg.dropout, batch_first=True)
+        self.fusion = _make_mlp(h, h, h)
         self.dropout = nn.Dropout(cfg.dropout)
 
-        # Type-specific decoders (PQ, PV, Slack), each outputs 4-dim (Pg, Qg, V, theta).
         self.decoders = nn.ModuleList([_make_mlp(h, h, cfg.out_dim) for _ in range(3)])
 
-    def _global_attention(self, local: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
-        x_padded, mask = to_dense_batch(local, batch)
-        if self.use_performer:
-            attn_out = self.attn(x_padded, mask=mask)
-            global_out = x_padded + attn_out
-        else:
-            attn_out, _ = self.attn(x_padded, x_padded, x_padded, key_padding_mask=~mask)
-            global_out = x_padded + attn_out
-        return global_out, mask
-
     def _compute_lap_pe(self, edge_index: torch.Tensor, node_mask: torch.Tensor, k: int) -> torch.Tensor:
-        """Compute LapPE for a single graph defined by node_mask."""
         device = edge_index.device
         dtype = torch.float
         idx = torch.nonzero(node_mask, as_tuple=False).flatten()
@@ -138,7 +118,6 @@ class HHMPNN(nn.Module):
         return evecs[:, :k]
 
     def _get_pe(self, edge_index: torch.Tensor, batch: torch.Tensor, num_nodes: int, k: int) -> torch.Tensor:
-        """Return LapPE per node, computing once per unique topology."""
         pe = torch.zeros(num_nodes, k, device=edge_index.device, dtype=torch.float)
         unique_graphs = batch.unique(sorted=True)
         for g in unique_graphs:
@@ -151,6 +130,16 @@ class HHMPNN(nn.Module):
             pe[mask] = self._pe_cache[key]
         return pe
 
+    def _global_attention(self, local: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
+        x_padded, mask = to_dense_batch(local, batch)
+        if self.use_performer:
+            attn_out = self.attn(x_padded, mask=mask)
+            global_out = x_padded + attn_out
+        else:
+            attn_out, _ = self.attn(x_padded, x_padded, x_padded, key_padding_mask=~mask)
+            global_out = x_padded + attn_out
+        return global_out[mask]
+
     def forward(self, data: Data) -> torch.Tensor:
         x, edge_index = data.x, data.edge_index
         edge_attr = getattr(data, "edge_attr", None)
@@ -159,7 +148,6 @@ class HHMPNN(nn.Module):
             batch = x.new_zeros(x.size(0), dtype=torch.long)
 
         node_types = _infer_node_types(x[:, 2])
-
         pe = getattr(data, "pe", None)
         if pe is None:
             pe = self._get_pe(edge_index, batch, num_nodes=x.size(0), k=self.cfg.pe_dims).to(x.dtype)
@@ -175,7 +163,7 @@ class HHMPNN(nn.Module):
         else:
             h_edges = self.edge_bias.unsqueeze(0).expand(edge_index.size(1), -1)
 
-        for edge_upd, node_upd, fusion in zip(self.edge_updates, self.node_updates, self.fusions):
+        for edge_upd, node_upd in zip(self.edge_updates, self.node_updates):
             src, dst = edge_index
             m_edge = edge_upd(torch.cat([h_nodes[src], h_nodes[dst], h_edges], dim=-1))
             h_edges = h_edges + m_edge
@@ -183,16 +171,11 @@ class HHMPNN(nn.Module):
             m_node = torch.zeros_like(h_nodes)
             m_node.index_add_(0, dst, h_edges)
             h_node_upd = node_upd(torch.cat([h_nodes, m_node], dim=-1))
-            local = h_nodes + h_node_upd
+            h_nodes = h_nodes + h_node_upd
 
-            # Global attention (per graph).
-            global_out, mask = self._global_attention(local, batch)
-            global_flat = global_out[mask]
-
-            X_M = local
-            X_T = global_flat
-            h_nodes = fusion(X_T + X_M)
-            h_nodes = self.dropout(h_nodes)
+        global_flat = self._global_attention(h_nodes, batch)
+        h_nodes = self.fusion(h_nodes + global_flat)
+        h_nodes = self.dropout(h_nodes)
 
         out = h_nodes.new_zeros(h_nodes.size(0), self.decoders[0][-1].out_features)
         for t in range(len(self.decoders)):
@@ -202,10 +185,9 @@ class HHMPNN(nn.Module):
         return out
 
 
-def build_model(cfg: dict, dataset) -> HHMPNN:
-    """Factory compatible with load_model; expects cfg['model'] entries."""
+def build_model(cfg: dict, dataset) -> HHNOneAttention:
     data = dataset[0]
-    model_cfg = HHMPNNConfig(
+    model_cfg = HHNOneAttentionConfig(
         in_dim=data.x.size(-1),
         out_dim=data.y.size(-1),
         hidden_dim=cfg["model"].get("hidden", 256),
@@ -216,4 +198,4 @@ def build_model(cfg: dict, dataset) -> HHMPNN:
         attention=cfg["model"].get("attention", "mha"),
         pe_dims=cfg["model"].get("pe_dims", 5),
     )
-    return HHMPNN(model_cfg)
+    return HHNOneAttention(model_cfg)

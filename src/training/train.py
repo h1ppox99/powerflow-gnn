@@ -39,6 +39,19 @@ def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch
     return F.smooth_l1_loss(pred, target, beta=beta)
 
 
+def _metric_mse(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    """Pure masked MSE for reporting/selection, independent of training loss type."""
+    return _masked_mse(pred, target, mask)
+
+
+def _supervised_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0) -> torch.Tensor:
+    """Only the supervised term (MSE/Huber), no physics penalty."""
+    if loss_type == "huber":
+        return _masked_huber(pred, target, mask, beta=huber_beta)
+    # default to mse
+    return _masked_mse(pred, target, mask)
+
+
 def _compute_loss(pred, target, mask, loss_type: str, huber_beta: float = 1.0, batch=None, *, physics_weight: float = 1.0) -> torch.Tensor:
     """
     Loss over normalized outputs [P, Q, V, theta] with optional node mask.
@@ -88,8 +101,8 @@ class MetricTracker:
     def reset(self) -> None:
         self.sse = {k: 0.0 for k in ("p", "q", "v", "theta")}
         self.count = {k: 0.0 for k in ("p", "q", "v", "theta")}
-        self.loss_sum = 0.0
-        self.nodes = 0
+        self.loss_sum = 0.0           # training objective (MSE/Huber + optional physics)
+        self.valid_elems = 0  # number of supervised elements actually included (mask-aware)
         self.kcl_sum = 0.0
         self.kcl_batches = 0
 
@@ -113,10 +126,23 @@ class MetricTracker:
             self.sse["theta"] += torch.sum(diff_theta**2).item()
             self.count["theta"] += diff_theta.numel()
 
-        weight = self.physics_weight if physics_weight is None else physics_weight
-        loss = _compute_loss(pred, target, mask, self.loss_type, batch=batch, physics_weight=weight, huber_beta=self.huber_beta)
-        self.loss_sum += loss.item() * pred.size(0)
-        self.nodes += pred.size(0)
+        # Training objective (matches what was optimized) plus pure MSE for reporting.
+        loss_obj = _compute_loss(
+            pred,
+            target,
+            mask,
+            self.loss_type,
+            huber_beta=self.huber_beta,
+            batch=batch,
+            physics_weight=physics_weight if physics_weight is not None else self.physics_weight,
+        )
+        loss_mse = _metric_mse(pred, target, mask)
+        if mask is not None:
+            valid_elems = float(mask.sum().item())
+        else:
+            valid_elems = float(pred.numel())
+        self.loss_sum += loss_obj.item() * valid_elems
+        self.valid_elems += valid_elems
 
         with torch.no_grad():
             edge_flows = _estimate_edge_flows(pred, batch)
@@ -145,8 +171,11 @@ class MetricTracker:
         out["rmse_num"] = (num_sse / num_count) ** 0.5 if num_count > 0 else float("nan")
         out["rmse_theta"] = (self.sse["theta"] / self.count["theta"]) ** 0.5 if self.count["theta"] > 0 else float("nan")
 
-        total_nodes = max(self.nodes, 1)
-        out["loss"] = self.loss_sum / total_nodes
+        total_elems = max(self.valid_elems, 1.0)
+        out["loss"] = self.loss_sum / total_elems
+        total_sse = sum(self.sse.values())
+        total_count = sum(self.count.values())
+        out["loss_mse"] = total_sse / max(total_count, 1.0)
         out["mean_kcl_residual"] = self.kcl_sum / max(self.kcl_batches, 1)
         return out
 
@@ -164,20 +193,35 @@ def train_one_epoch(
     physics_weight: float = 1.0
 ):
     model.train()
-    total = 0.0
+    total_loss = 0.0
+    total_mse = 0.0
+    total_elems = 0.0
     for step, batch in enumerate(tqdm(loader, desc="train", leave=False)):
         batch = batch.to(device)
         mask = getattr(batch, "mask", None)
         y_hat = model(batch)
         if debug and step < debug_batches:
             _debug_report("train", y_hat, batch.y, mask)
-        loss = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta, batch=batch, physics_weight=physics_weight)
+        loss_total = _compute_loss(y_hat, batch.y, mask, loss_type, huber_beta=huber_beta, batch=batch, physics_weight=physics_weight)
+        # Training objective (may include physics) and pure MSE reporting.
+        loss_train = loss_total
+        loss_mse = _metric_mse(y_hat, batch.y, mask)
 
         optimizer.zero_grad()
-        loss.backward()
+        loss_total.backward()
         optimizer.step()
-        total += loss.item() * batch.num_nodes
-    return total / sum(b.num_nodes for b in loader.dataset)
+        if mask is not None:
+            valid_elems = float(mask.sum().item())
+        else:
+            valid_elems = float(y_hat.numel())
+        total_loss += loss_train.item() * valid_elems
+        total_mse += loss_mse.item() * valid_elems
+        total_elems += valid_elems
+    denom = max(total_elems, 1.0)
+    return {
+        "loss": total_loss / denom,  # training objective (Huber/MSE + optional physics)
+        "mse": total_mse / denom,   # pure MSE reporting
+    }
 
 @torch.no_grad()
 def evaluate(
@@ -258,8 +302,10 @@ def fit(model, dataset, cfg):
     colw = 12
     fmt = (
         f"{{:^6}} | "  # epoch
-        f"{{:^{colw}}} | "  # train_loss
-        f"{{:^{colw}}} | "  # val_loss
+        f"{{:^{colw}}} | "  # train_loss (sup)
+        f"{{:^{colw}}} | "  # train_mse
+        f"{{:^{colw}}} | "  # val_loss (sup)
+        f"{{:^{colw}}} | "  # val_mse
         f"{{:^{colw}}} | "  # mse_P
         f"{{:^{colw}}} | "  # mse_Q
         f"{{:^{colw}}} | "  # mse_V
@@ -267,7 +313,7 @@ def fit(model, dataset, cfg):
         f"{{:^{colw}}}"     # KCL_mean
     )
     for epoch in range(1, cfg['train']['epochs'] + 1):
-        tr = train_one_epoch(
+        tr_stats = train_one_epoch(
             model,
             train_loader,
             opt,
@@ -290,12 +336,16 @@ def fit(model, dataset, cfg):
             physics_weight=physics_weight,
         )
         if scheduler is not None:
-            scheduler.step(val["loss"] if isinstance(scheduler, ReduceLROnPlateau) else None)
+            # Scheduler follows the same supervised loss as training (e.g., Huber when enabled).
+            scheduler_metric = val["loss"] if isinstance(scheduler, ReduceLROnPlateau) else None
+            scheduler.step(scheduler_metric)
 
         row = {
             "epoch": float(epoch),
-            "train_loss": float(tr),
+            "train_loss": float(tr_stats["loss"]),
+            "train_mse": float(tr_stats["mse"]),
             "val_loss": float(val["loss"]),
+            "val_mse": float(val["loss_mse"]),
             "val_mse_p": float(val["mse_p"]),
             "val_mse_q": float(val["mse_q"]),
             "val_mse_v": float(val["mse_v"]),
@@ -312,7 +362,9 @@ def fit(model, dataset, cfg):
                 fmt.format(
                     "epoch",
                     "train_loss",
+                    "train_mse",
                     "val_loss",
+                    "val_mse",
                     "mse_P",
                     "mse_Q",
                     "mse_V",
@@ -323,8 +375,10 @@ def fit(model, dataset, cfg):
         tqdm.write(
             fmt.format(
                 f"{epoch:03d}",
-                f"{tr:.4e}",
+                f"{tr_stats['loss']:.4e}",
+                f"{tr_stats['mse']:.4e}",
                 f"{val['loss']:.4e}",
+                f"{val['loss_mse']:.4e}",
                 f"{val['mse_p']:.4e}",
                 f"{val['mse_q']:.4e}",
                 f"{val['mse_v']:.4e}",
@@ -333,9 +387,9 @@ def fit(model, dataset, cfg):
             )
         )
 
-        val_loss = val.get("loss", val["rmse_num"] + val["rmse_theta"])
-        if val_loss < best_val:
-            best_val = val_loss
+        val_metric = val.get("loss", val["rmse_num"] + val["rmse_theta"])
+        if val_metric < best_val:
+            best_val = val_metric
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
 
     model.load_state_dict(best_state)
@@ -352,9 +406,10 @@ def fit(model, dataset, cfg):
         physics_weight=physics_weight,
     )
     tqdm.write(
-        "[TEST] loss {loss:.4e} | rmse_num {num:.4e} | rmse_theta {theta:.4e} | "
+        "[TEST] sup_loss {sup:.4e} | total_mse {mse:.4e} | rmse_num {num:.4e} | rmse_theta {theta:.4e} | "
         "mse_p {p:.4e} | mse_q {q:.4e} | mse_v {v:.4e} | mse_theta {t:.4e} | mean_kcl {kcl:.4e}".format(
-            loss=test["loss"],
+            sup=test["loss"],
+            mse=test.get("loss_mse", test["loss"]),
             num=test["rmse_num"],
             theta=test["rmse_theta"],
             p=test["mse_p"],
@@ -405,7 +460,7 @@ def _plot_results(history: List[Mapping[str, float]], logging_cfg: Mapping | Non
     axs[0].plot(epochs, val_loss, label="val_loss")
     axs[0].set_yscale("log")
     axs[0].set_xlabel("Epoch")
-    axs[0].set_ylabel("Loss (log scale)")
+    axs[0].set_ylabel("Supervised loss (log scale)")
     axs[0].legend()
     axs[0].grid(True, ls="--", alpha=0.5)
 
@@ -428,10 +483,11 @@ def _plot_results(history: List[Mapping[str, float]], logging_cfg: Mapping | Non
 
 
 def _baseline_comparison(test_metrics: Mapping[str, float]) -> None:
+    total_target = test_metrics.get("loss_mse", test_metrics["loss"])
     target_rows = [
         ("P/Q MSE (target ~1e-4)", test_metrics["mse_p"], test_metrics["mse_q"], "≈1e-4"),
         ("V/θ MSE (target ~1e-5)", test_metrics["mse_v"], test_metrics["mse_theta"], "≈1e-5"),
-        ("Total target", test_metrics["loss"], None, "≈3.75e-5"),
+        ("Total target", total_target, None, "≈3.75e-5"),
     ]
     tqdm.write("\nBaseline comparison (PowerGraph IEEE118 targets):")
     for name, v1, v2, ref in target_rows:
