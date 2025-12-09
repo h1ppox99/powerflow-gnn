@@ -1,0 +1,32 @@
+# Transformer baseline matching PowerGraph paper
+
+model:
+  name: transformer
+  hidden: 32
+  num_layers: 3
+  heads: 4
+  dropout: 0.0
+
+train:
+  epochs: 50
+  lr: 0.001
+  weight_decay: 0.0
+  batch_size: 32
+  split:
+    train: 0.85
+    val: 0.05
+    test: 0.10
+  loss: physics_huber
+  physics_weight: 1
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 5
+
+data:
+  backend: powergraph
+  grid: IEEE118
+  task: nodeopf
+
+logging:
+  output_dir: output/transformer_physics/
