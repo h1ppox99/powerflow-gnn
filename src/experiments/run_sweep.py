@@ -2,8 +2,6 @@ import argparse
 import numpy as np
 import yaml
 import json
-import shutil
-import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -15,7 +13,7 @@ from src.experiments.run_experiment import load_dataset
 from src.visualization.plot_pareto_frontier import plot_pareto_frontier
 
 def set_nested_value(d, path, value):
-    """Sets a value in a nested dictionary using a dot-notation string (e.g. 'train.lr')."""
+    """Sets a value in a nested dictionary using a dot-notation string."""
     keys = path.split(".")
     for key in keys[:-1]:
         d = d.setdefault(key, {})
@@ -32,93 +30,163 @@ def load_history_from_file(output_dir: Path):
                     history.append(json.loads(line))
     return history
 
+def aggregate_metrics(metrics_list):
+    """Averages a list of metric dictionaries."""
+    if not metrics_list:
+        return {}, {}
+    keys = metrics_list[0].keys()
+    avg = {}
+    std = {}
+    for k in keys:
+        # Only average numeric values
+        values = [m[k] for m in metrics_list if isinstance(m.get(k), (int, float))]
+        if values:
+            avg[k] = float(np.mean(values))
+            std[k] = float(np.std(values))
+    return avg, std
+
+def aggregate_histories(histories_list):
+    """Averages training curves across seeds (truncates to shortest run)."""
+    if not histories_list:
+        return []
+    
+    # Find minimum epochs across seeds (in case of early stopping)
+    min_len = min(len(h) for h in histories_list)
+    avg_history = []
+    
+    if min_len == 0:
+        return []
+        
+    keys = histories_list[0][0].keys()
+
+    for i in range(min_len):
+        epoch_data = {"epoch": histories_list[0][i].get("epoch", i)}
+        for k in keys:
+            if k == "epoch": continue
+            values = [h[i].get(k) for h in histories_list if isinstance(h[i].get(k), (int, float))]
+            if values:
+                epoch_data[k] = float(np.mean(values))
+        avg_history.append(epoch_data)
+    return avg_history
+
+def run_single_seed(seed, base_cfg, dataset, param_name, val, log_root):
+    """Runs one specific seed and returns metrics + history."""
+    
+    # 1. Prepare Config for this Seed
+    cfg = deepcopy(base_cfg)
+    set_nested_value(cfg, param_name, val)
+    
+    # IMPORTANT: Set the seed!
+    cfg.setdefault("train", {})["seed"] = seed
+    
+    # Unique directory for this specific seed
+    # e.g. output/logs_sweep/sweep_weight_1e-5_seed0
+    run_id = f"sweep_{param_name}_{val:.2e}_seed{seed}".replace(".", "_")
+    output_dir = log_root / run_id
+    cfg.setdefault("logging", {})["output_dir"] = str(output_dir)
+
+    # 2. Train
+    print(f"    > Seed {seed} started...")
+    try:
+        # Reload model to ensure fresh weights
+        model = load_model(cfg, dataset)
+        
+        # Train (fit writes jsonl to disk)
+        metrics = fit(model, dataset, cfg) 
+        
+        # Read history back from disk
+        history = load_history_from_file(output_dir)
+        
+        return metrics, history
+    except Exception as e:
+        print(f"    > ERROR in Seed {seed}: {e}")
+        return None, None
+
 def main():
-    parser = argparse.ArgumentParser(description="Run a hyperparameter sweep.")
-    
-    # Configuration
-    parser.add_argument("--config", default="src/config/default.yaml", help="Path to base config file")
-    
-    # Sweep Parameters
-    parser.add_argument("--param", required=True, help="Config parameter to sweep (e.g., 'train.physics_weight')")
-    parser.add_argument("--start", type=float, required=True, help="Start value (power of 10 if --log is used)")
-    parser.add_argument("--stop", type=float, required=True, help="Stop value (power of 10 if --log is used)")
-    parser.add_argument("--steps", type=int, default=5, help="Number of steps in the sweep")
-    parser.add_argument("--log", action="store_true", default=True, help="Use logarithmic spacing (base 10)")
+    parser = argparse.ArgumentParser(description="Run a hyperparameter sweep with averaging.")
+    parser.add_argument("--config", default="src/config/default.yaml")
+    parser.add_argument("--param", required=True, help="Parameter to sweep (e.g. train.physics_weight)")
+    parser.add_argument("--start", type=float, required=True)
+    parser.add_argument("--stop", type=float, required=True)
+    parser.add_argument("--steps", type=int, default=5)
+    parser.add_argument("--log", action="store_true", default=True, help="Use log spacing")
+    parser.add_argument("--seeds", type=int, default=5, help="Number of seeds to average over")
 
     args = parser.parse_args()
 
-    # 1. Load Base Config
+    # Load Config & Dataset
     with open(args.config) as f:
         base_cfg = yaml.safe_load(f)
-
-    # 2. Generate Sweep Values
+    
     if args.log:
-        # If start=-5 and stop=3, this generates 10^-5 to 10^3
         values = np.logspace(args.start, args.stop, num=args.steps)
-        print(f"Sweeping '{args.param}' (Log Scale): {values}")
     else:
         values = np.linspace(args.start, args.stop, num=args.steps)
-        print(f"Sweeping '{args.param}' (Linear Scale): {values}")
 
-    # Output directory
+    # Output Setup
+    # Where the final averaged JSONs go (for plotting)
     curves_dir = Path("output/experiment_curves") / args.param.replace(".", "_")
     curves_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Where the temporary logs for each seed go
+    log_root = Path("output/logs_sweep")
+    log_root.mkdir(parents=True, exist_ok=True)
 
-    print("Loading dataset (shared across sweep)...")
+    print(f"Loading dataset... (Running {args.seeds} seeds sequentially)")
     dataset = load_dataset(base_cfg)
 
+    # --- MAIN SWEEP LOOP ---
     for i, val in enumerate(values):
         val = float(val)
-        print(f"\n--- [Sweep {i+1}/{len(values)}] {args.param} = {val:.4e} ---")
+        print(f"\n=== [Sweep {i+1}/{len(values)}] {args.param} = {val:.4e} ===")
 
-        # 3. Prepare Config
-        cfg = deepcopy(base_cfg)
+        seeds_metrics = []
+        seeds_histories = []
         
-        # Inject the sweep value dynamically
-        set_nested_value(cfg, args.param, val)
+        # Run seeds sequentially (Safe for 1 GPU)
+        for seed in range(args.seeds):
+            m, h = run_single_seed(seed, base_cfg, dataset, args.param, val, log_root)
+            if m is not None:
+                seeds_metrics.append(m)
+                seeds_histories.append(h)
 
-        # Configure unique logging folder
-        temp_dir_name = f"sweep_{args.param}_{val:.2e}".replace(".", "_")
-        if "logging" not in cfg:
-            temp_output_dir = Path("output") / "logs" / temp_dir_name
-            cfg.setdefault("logging", {})["output_dir"] = str(temp_output_dir)
-        
-
-        # 4. Train
-        try:
-            model = load_model(cfg, dataset)
-            test_metrics = fit(model, dataset, cfg)
-        except Exception as e:
-            print(f"Run failed for {val:.2e}: {e}")
+        if not seeds_metrics:
+            print(f"  -> All seeds failed for {val:.2e}. Skipping.")
             continue
 
-        # 5. Log & Save Data
-        log_experiment_run(args.config, cfg, test_metrics)
-        
-        history = load_history_from_file(temp_output_dir)
-        
-        save_file = curves_dir / f"val_{val:.4e}.json"
-        with open(save_file, "w") as f:
-            json.dump({
-                "parameter": args.param,
-                "value": val,
-                "test_metrics": test_metrics,
-                "history": history
-            }, f, indent=2)
-            
-        print(f"Saved results to {save_file}")
+        # 3. Aggregate Results (Mean & Std)
+        mean_metrics, std_metrics = aggregate_metrics(seeds_metrics)
+        mean_history = aggregate_histories(seeds_histories)
 
-        # --- INTEGRATION: Auto-plot the Pareto Frontier ---
-    # Only try to plot if we swept physics_weight, or if you want it always:
-        try:
-            print("Generating Pareto plot...")
-            # We turn off show_plot=False so it doesn't block the script execution
-            plot_pareto_frontier(curves_dir, show_plot=False)
-        except Exception as e:
-            print(f"Could not generate plot: {e}")
+        print(f"  -> Finished {len(seeds_metrics)} seeds. Mean MSE: {mean_metrics.get('loss_mse', 'N/A'):.4e}")
+
+        # 4. Log to Shared CSV (Log the MEAN value)
+        log_cfg = deepcopy(base_cfg)
+        set_nested_value(log_cfg, args.param, val)
+        log_experiment_run(args.config, log_cfg, mean_metrics)
+
+        # 5. Save Consolidated JSON
+        save_file = curves_dir / f"val_{val:.4e}.json"
         
-        # Cleanup temp logs (optional)
-        # shutil.rmtree(temp_output_dir)
+        final_data = {
+            "parameter": args.param,
+            "value": val,
+            "seeds": args.seeds,
+            "test_metrics": mean_metrics,  # The mean is used for plotting
+            "std_metrics": std_metrics,    # Error bars if needed
+            "history": mean_history,       # Averaged curve
+            "all_seeds_metrics": seeds_metrics 
+        }
+
+        with open(save_file, "w") as f:
+            json.dump(final_data, f, indent=2)
+
+    # Auto-plot Pareto at the end
+    try:
+        print("\nGenerating Pareto plot from averaged results...")
+        plot_pareto_frontier(curves_dir, show_plot=False)
+    except Exception as e:
+        print(f"Plotting failed: {e}")
 
 if __name__ == "__main__":
     main()

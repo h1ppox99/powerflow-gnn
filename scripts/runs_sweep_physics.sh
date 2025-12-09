@@ -7,16 +7,16 @@ export UV_CACHE_DIR
 export PYTHONPATH=.
 
 # --- Configuration ---
-CFG="src/config/transformer_physics.yaml"
+CFG="src/config/hh_mpnn_physics.yaml"
 SCRIPT="src/experiments/run_sweep.py"
 
 # --- Sweep Parameters ---
 # We want 10^-5 to 10^3. 
 # Since we use --log, START/STOP are powers of 10.
 PARAM="train.physics_weight"
-START="-5"  
-STOP="3"    
-STEPS="20"   # 9 steps: 1e-5, 1e-4, ..., 1e3
+START="-10"  
+STOP="1"    
+STEPS="15"   # 9 steps: 1e-5, 1e-4, ..., 1e3
 FLAGS="--log"
 
 echo "========================================================"
