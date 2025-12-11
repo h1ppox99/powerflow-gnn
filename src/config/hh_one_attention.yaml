@@ -1,0 +1,30 @@
+# HHN-One-Attention: single global attention after MP stack, no physics loss
+
+model:
+  name: hhn_one_attention
+  hidden: 512         
+  num_layers: 5
+  heads: 4            
+  dropout: 0.0
+  pe_dims: 5         
+
+train:
+  epochs: 50
+  lr: 0.00005         
+  weight_decay: 0.00000005
+  batch_size: 16      
+  split:
+    train: 0.85
+    val: 0.05
+    test: 0.10
+  loss: huber
+  huber_delta: 1.0
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.1
+    patience: 10
+
+data:
+  backend: powergraph
+  grid: IEEE118
+  task: nodeopf

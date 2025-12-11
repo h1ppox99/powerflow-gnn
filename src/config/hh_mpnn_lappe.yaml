@@ -2,17 +2,17 @@
 
 model:
   name: hh_mpnn
-  hidden: 384
-  num_layers: 7
+  hidden: 512
+  num_layers: 5
   heads: 4
-  dropout: 0.0
-  pe_dims: 32
+  dropout: 0
+  pe_dims: 5
 
 train:
   epochs: 50
-  lr: 0.00002
+  lr: 0.00005
   weight_decay: 0.00000005
-  batch_size: 32
+  batch_size: 16
   split:
     train: 0.85
     val: 0.05
@@ -26,5 +26,5 @@ train:
 
 data:
   backend: powergraph
-  grid: IEEE118
+  grid: UK
   task: nodeopf
