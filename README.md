@@ -2,6 +2,8 @@
 
 This project implements physics-informed graph neural networks (GNNs) to improve the accuracy and interpretability of optimal power flow solutions in electrical grids. 
 
+![Graph representation of the IEEE-118 grid.](./docs/image_heterogeneous_graph.png)
+
 ## Overview
 
 Optimal Power Flow (OPF) is the computational heart of the modern energy grid, balancing cost-efficiency with strict physical laws. While traditional iterative solvers (like Newton-Raphson) are precise, their high computational cost prohibits real-time adaptation for large-scale, renewable-heavy grids.
