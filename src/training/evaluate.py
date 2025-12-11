@@ -1,2 +1,0 @@
-# Validation, RMSE/KCL metrics
-
