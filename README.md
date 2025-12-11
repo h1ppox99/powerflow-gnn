@@ -6,19 +6,6 @@ This project implements physics-informed graph neural networks (GNNs) to improve
 
 Optimal power flow (OPF) is a fundamental problem in power systems engineering, aiming to determine the most efficient operating conditions while satisfying physical and operational constraints. Traditional methods can be computationally intensive and may not fully leverage the underlying grid topology and physics. This project integrates physics-based regularization into GNN architectures to enforce Kirchhoff’s laws and power balance constraints, enhancing model reliability and generalization. The goal is to develop scalable, interpretable models that can assist in real-time power grid management.
 
-## Work already completed
-
-- Setup project 
-- Built data processing pipeline 
-- Written models scripts 
-- Linked models and data processing pipelines
-
-TODO : 
-
-- Adjust losses scripts
-- Train models
-- Adjust hyperparameters
-
 ## Setup Instructions
 
 1. Install `uv` if not already installed:
