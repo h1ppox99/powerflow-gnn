@@ -3,7 +3,7 @@
 Run:
     python plot_ieee118_visual.py
 Outputs:
-    output/ieee118_hhmpnn_visual.png
+    output/ieee118_HeGGA_visual.png
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from matplotlib.patches import Circle, FancyBboxPatch
 
 
 RAW_DIR = REPO_ROOT / "data" / "raw" / "ieee118" / "ieee118" / "raw"
-OUTPUT_PATH = REPO_ROOT / "output" / "ieee118_hhmpnn_visual.png"
+OUTPUT_PATH = REPO_ROOT / "output" / "ieee118_HeGGA_visual.png"
 
 
 def load_ieee118_sample(raw_dir: Path = RAW_DIR) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

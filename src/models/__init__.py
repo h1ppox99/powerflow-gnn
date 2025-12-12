@@ -2,7 +2,7 @@
 
 from .transformer_baseline import TransformerBaseline
 from .transformer_vn import TransformerConvVN
-from .hh_mpnn import HHMPNN, build_model as build_hh_mpnn
+from .HeGGA import HeGGA, build_model as build_HeGGA
 from .hhn_one_attention import HHNOneAttention, build_model as build_hhn_one_attention
 from .graphsage_pi import GraphSAGE_PI
 
@@ -12,7 +12,7 @@ __all__ = [
     "compute_degree_histogram",
     "TransformerBaseline",
     "TransformerConvVN",
-    "HHMPNN",
+    "HeGGA",
     "HHNOneAttention",
 ]
 
@@ -91,8 +91,8 @@ def load_model(cfg: dict, dataset):
             dropout=cfg["model"].get("dropout", 0.0),
             edge_dim=edge_dim,
         )
-    elif cfg["model"]["name"] == "hh_mpnn":
-        return build_hh_mpnn(cfg, dataset)
+    elif cfg["model"]["name"] == "HeGGA":
+        return build_HeGGA(cfg, dataset)
     elif cfg["model"]["name"] == "hhn_one_attention":
         return build_hhn_one_attention(cfg, dataset)
     else:

@@ -41,7 +41,7 @@ df = pd.concat([df, df.apply(extract_config, axis=1, result_type="expand")], axi
 # ----------------------------------------------------
 df["pretty_name"] = df.model_name.replace({
     "transformer": "Baseline",
-    "hh_mpnn": "Our model",
+    "HeGGA": "Our model",
 })
 
 df_baseline = df[df.pretty_name == "Baseline"]

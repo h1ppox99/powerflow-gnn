@@ -7,4 +7,4 @@ UV_CACHE_DIR=${UV_CACHE_DIR:-./.uv_cache}
 export UV_CACHE_DIR
 export PYTHONPATH=.
 
-uv run src/experiments/run_experiment.py --config src/config/hh_mpnn_lappe.yaml
+uv run src/experiments/run_experiment.py --config src/config/HeGGA_lappe.yaml

@@ -7,7 +7,7 @@ export UV_CACHE_DIR
 export PYTHONPATH=.
 
 # --- Configuration ---
-CFG="src/config/hh_mpnn_physics.yaml"
+CFG="src/config/HeGGA_physics.yaml"
 SCRIPT="src/experiments/run_sweep.py"
 
 # --- Sweep Parameters ---

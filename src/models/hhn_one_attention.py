@@ -1,4 +1,4 @@
-"""HH-MPNN variant with a single global attention applied after message passing."""
+"""HeGGA variant with a single global attention applied after message passing."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""HH-MPNN hybrid GNN+attention model (simplified for OPF bus data)."""
+"""HeGGA hybrid GNN+attention model (simplified for OPF bus data)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _infer_node_types(node_type_feat: torch.Tensor) -> torch.Tensor:
 
 
 @dataclass
-class HHMPNNConfig:
+class HeGGAConfig:
     in_dim: int
     out_dim: int
     hidden_dim: int = 256
@@ -48,10 +48,10 @@ class HHMPNNConfig:
     pe_dims: int = 5
 
 
-class HHMPNN(nn.Module):
+class HeGGA(nn.Module):
     """Five-layer heterogeneous MPNN + global attention with type-specific enc/dec."""
 
-    def __init__(self, cfg: HHMPNNConfig) -> None:
+    def __init__(self, cfg: HeGGAConfig) -> None:
         super().__init__()
         self.cfg = cfg
         h = cfg.hidden_dim
@@ -202,10 +202,10 @@ class HHMPNN(nn.Module):
         return out
 
 
-def build_model(cfg: dict, dataset) -> HHMPNN:
+def build_model(cfg: dict, dataset) -> HeGGA:
     """Factory compatible with load_model; expects cfg['model'] entries."""
     data = dataset[0]
-    model_cfg = HHMPNNConfig(
+    model_cfg = HeGGAConfig(
         in_dim=data.x.size(-1),
         out_dim=data.y.size(-1),
         hidden_dim=cfg["model"].get("hidden", 256),
@@ -216,4 +216,4 @@ def build_model(cfg: dict, dataset) -> HHMPNN:
         attention=cfg["model"].get("attention", "mha"),
         pe_dims=cfg["model"].get("pe_dims", 5),
     )
-    return HHMPNN(model_cfg)
+    return HeGGA(model_cfg)
