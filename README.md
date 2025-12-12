@@ -64,21 +64,21 @@ Or one can download the dataset "dataset_pf_opf.zip" from (https://figshare.com/
 - Hardware: a GPU is required; expect roughly 1m30s per epoch on IEEE118 with an NVIDIA A5000. CPU training is not recommended for parity.
 - Main HeGGA run: 
 ```bash
-scripts/train_HeGGA.sh 
+bash scripts/train_HeGGA.sh 
 ```
 with config src/config/HeGGA_lappe.yaml. If the user wants to run an experiment without PE, set pe_dims: 0. Both mse and huber losses are supported via the config.
 - Ablation: 
 ```bash
-scripts/train_hnn_ablation.sh 
+bash scripts/train_hnn_ablation.sh 
 ```
 with config src/config/hh_one_attention.yaml for only the final layer. Run 
 ```bash
-scripts/train_hegga_noattn.sh
+bash scripts/train_hegga_noattn.sh
 ```
 for no attention. Same hyperparameters; set pe_dims: 0 to disable positional encodings if desired.
 - Transformer baseline: 
 ```bash
-scripts/train_transformer.sh
+bash scripts/train_transformer.sh
 ```
 with config src/config/transformer_baseline.yaml
 
