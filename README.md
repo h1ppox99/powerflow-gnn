@@ -59,24 +59,28 @@ rm data.tar.gz
 ```
 Or one can download the dataset "dataset_pf_opf.zip" from (https://figshare.com/articles/dataset/PowerGraph/22820534) and unzip it under `data/raw/`.
 
-## Running an Experiment
-
-To launch a training run with the default GraphSAGE configuration, use:
-
-```bash
-uv run src/experiments/run_experiment.py --config src/config/graphsage.yaml
-```
-
-This command starts training with physics-informed regularization enabled and logs results for analysis.
-
-This command starts training with physics-informed regularization enabled and logs results for analysis.
-
 ## Reproducing the Medium results (HeGGA + ablations + baseline)
 
 - Hardware: a GPU is required; expect roughly 1m30s per epoch on IEEE118 with an NVIDIA A5000. CPU training is not recommended for parity.
-- Main HeGGA run: scripts/train_HeGGA.sh with config src/config/HeGGA_lappe.yaml. If the user wants to run an experiment without PE, set pe_dims: 0. Both mse and huber losses are supported via the config.
-- Ablation: scripts/train_hnn_ablation.sh with config src/config/hh_one_attention.yaml for only the final layer. Run scripts/train_hegga_noattn.sh for no attention. Same hyperparameters; set pe_dims: 0 to disable positional encodings if desired.
-- Transformer baseline: scripts/train_transformer.sh with config src/config/transformer_baseline.yaml
+- Main HeGGA run: 
+```bash
+scripts/train_HeGGA.sh 
+```
+with config src/config/HeGGA_lappe.yaml. If the user wants to run an experiment without PE, set pe_dims: 0. Both mse and huber losses are supported via the config.
+- Ablation: 
+```bash
+scripts/train_hnn_ablation.sh 
+```
+with config src/config/hh_one_attention.yaml for only the final layer. Run 
+```bash
+scripts/train_hegga_noattn.sh
+```
+for no attention. Same hyperparameters; set pe_dims: 0 to disable positional encodings if desired.
+- Transformer baseline: 
+```bash
+scripts/train_transformer.sh
+```
+with config src/config/transformer_baseline.yaml
 
 Keep the configuration values as default to match the reported metrics.
 
