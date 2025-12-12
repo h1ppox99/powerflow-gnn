@@ -26,5 +26,5 @@ train:
 
 data:
   backend: powergraph
-  grid: UK
+  grid: IEEE118
   task: nodeopf
