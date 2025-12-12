@@ -42,17 +42,10 @@ dependencies = [
     "six==1.17.0",
     "sympy==1.14.0",
     "threadpoolctl==3.6.0",
+    "torch==2.1.0+cu121",
     "torch-geometric==2.6.0",
-
-    "torch==2.4.0+cu121; sys_platform != 'darwin'", 
-    "torch==2.4.0; sys_platform == 'darwin'",
-    
-    "torchvision==0.19.0+cu121; sys_platform != 'darwin'",
-    "torchvision==0.19.0; sys_platform == 'darwin'",
-    
-    "torchaudio==2.4.0+cu121; sys_platform != 'darwin'",
-    "torchaudio==2.4.0; sys_platform == 'darwin'",
-
+    "torchaudio==2.1.0+cu121",
+    "torchvision==0.16.0+cu121",
     "tqdm==4.67.1",
     "triton==2.1.0; sys_platform == 'linux'",
     "typing-extensions==4.15.0",
@@ -68,17 +61,13 @@ dependencies = [
 [tool.uv]
 index-strategy = "unsafe-best-match"
 
-find-links = [
-    "https://data.pyg.org/whl/torch-2.1.0+cu121.html",  # For Linux/Windows (CUDA)
-    "https://data.pyg.org/whl/torch-2.4.0+cpu.html",
-]
+find-links = ["https://data.pyg.org/whl/torch-2.1.0+cu121.html"]
 
 environments = [
     "sys_platform == 'linux'",
     "sys_platform == 'win32'",
-    "sys_platform == 'darwin'",
+    "sys_platform == 'darwin'",  # Add macOS
 ]
-
 override-dependencies = [
     "triton==2.1.0; sys_platform == 'linux'",
 ]
