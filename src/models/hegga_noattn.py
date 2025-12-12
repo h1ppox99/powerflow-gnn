@@ -7,13 +7,13 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Data
 
-from .hh_mpnn import HHMPNNConfig, _infer_node_types, _make_mlp
+from .HeGGA import HeGGAConfig, _infer_node_types, _make_mlp
 
 
 class HeGGANoAttn(nn.Module):
     """Typed encoders/decoders + edge-aware MLP updates, but no global attention."""
 
-    def __init__(self, cfg: HHMPNNConfig) -> None:
+    def __init__(self, cfg: HeGGAConfig) -> None:
         super().__init__()
         self.cfg = cfg
         h = cfg.hidden_dim
@@ -132,7 +132,7 @@ class HeGGANoAttn(nn.Module):
 def build_model(cfg: dict, dataset) -> HeGGANoAttn:
     """Factory compatible with load_model; expects cfg['model'] entries."""
     data = dataset[0]
-    model_cfg = HHMPNNConfig(
+    model_cfg = HeGGAConfig(
         in_dim=data.x.size(-1),
         out_dim=data.y.size(-1),
         hidden_dim=cfg["model"].get("hidden", 256),

@@ -1,7 +1,7 @@
 # HeGGA without global attention (ablation), mirroring hh_mpnn_lappe hyperparameters
 
 model:
-  name: HeGGA
+  name: HeGGANoAttn
   hidden: 512
   num_layers: 5
   heads: 4
