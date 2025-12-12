@@ -60,18 +60,18 @@ def kcl_quadratic_penalty(
 
 def physics_loss(pred, edge_index, edge_attr, maxs_y):
     """
-    Calcule le décalage (mismatch) de puissance selon les lois de Kirchhoff (AC Power Flow).
+    Calculates the power mismatch based on Kirchhoff's laws (AC Power Flow).
     
     Args:
-        pred: Prédictions du modèle [N, 4] -> [Pg, Qg, V, Theta] (Normalisé)
-        edge_index: Topologie du graphe [2, E]
-        edge_attr: Attributs des arêtes [E, 2] -> [Conductance G, Susceptance B] (Non normalisé !)
-        maxs_y: Facteurs de normalisation pour Y [1, 4]
+        pred: Model predictions [N, 4] -> [Pg, Qg, V, Theta] (Normalized)
+        edge_index: Graph topology [2, E]
+        edge_attr: Edge attributes [E, 2] -> [Conductance G, Susceptance B] (Unnormalized!)
+        maxs_y: Normalization factors for Y [1, 4]
         
     Returns:
-        Tensor scalaire représentant l'erreur physique moyenne (MSE du mismatch).
+        Scalar Tensor representing the average physical error (MSE of the mismatch).
     """
-    # 1. Dénormalisation (Identique)
+    # 1. Denormalization
     P_pred = pred[:, 0] * maxs_y[0]
     Q_pred = pred[:, 1] * maxs_y[1]
     V_pred = pred[:, 2] * maxs_y[2]
@@ -81,43 +81,44 @@ def physics_loss(pred, edge_index, edge_attr, maxs_y):
     G = edge_attr[:, 0]
     B = edge_attr[:, 1]
 
-    # --- CORRECTION MAJEURE ICI ---
+    # --- CALCULATION OF BRANCH FLOWS ---
     
-    # Pré-calculs
+    # Pre-calculations
     delta_theta = theta_pred[src] - theta_pred[dst]
     cos_t = torch.cos(delta_theta)
     sin_t = torch.sin(delta_theta)
     
-    # Terme quadratique (V_i^2) pour le noeud source
-    # C'est la puissance consommée par la ligne "juste parce qu'elle est sous tension"
+    # Quadratic term (V_i^2) for the source node
+    # Represents the power related to the voltage at the node itself
     vv_self = V_pred[src] ** 2 
     
-    # Terme croisé (V_i * V_j)
+    # Cross term (V_i * V_j)
     vv_cross = V_pred[src] * V_pred[dst]
 
-    # Équations Complètes de Flux de Branche (Branch Flow)
+    # Full Branch Flow Equations
     # P_ij = G * V_i^2 - V_i*V_j * (G*cos + B*sin)
     p_flow = (G * vv_self) - vv_cross * (G * cos_t + B * sin_t)
     
     # Q_ij = -B * V_i^2 - V_i*V_j * (G*sin - B*cos)
-    # (Note: le signe de B dépend de votre convention de dataset, souvent B est négatif pour les lignes inductives)
+    # (Note: The sign of B depends on the dataset convention; B is often negative for inductive lines)
     q_flow = (-B * vv_self) - vv_cross * (G * sin_t - B * cos_t)
 
     # ------------------------------
 
-    # 5. Agrégation (Somme des flux sortants)
+    # 5. Aggregation (Sum of outgoing flows)
+    # Aggregates flows from edges back to source nodes
     P_out_lines = scatter_add(p_flow, src, dim=0, dim_size=pred.size(0))
     Q_out_lines = scatter_add(q_flow, src, dim=0, dim_size=pred.size(0))
 
-    # 6. Mismatch : Injection - Sortie = 0
-    # P_pred est l'injection NETTE (Gen - Load). 
-    # Donc P_pred doit être égal à P_out_lines.
+    # 6. Mismatch: Injection - Outflow = 0
+    # P_pred is the NET injection (Generation - Load). 
+    # Therefore, P_pred must equal P_out_lines (power flowing into the grid).
     diff_P = P_pred - P_out_lines
     diff_Q = Q_pred - Q_out_lines
 
+    # Calculate Mean Squared Error of the physical violation
     loss_phy = torch.mean(diff_P**2 + diff_Q**2)
     return loss_phy
-
 
 @torch.no_grad()
 def check_kcl_residuals(
