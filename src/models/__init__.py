@@ -1,7 +1,5 @@
 """Public models exposed by the `src.models` package."""
 
-from .graphsage_pi import GraphSAGE_PI
-from .pna_pi import PNA_PI, compute_degree_histogram
 from .transformer_baseline import TransformerBaseline
 from .transformer_vn import TransformerConvVN
 from .hh_mpnn import HHMPNN, build_model as build_hh_mpnn
