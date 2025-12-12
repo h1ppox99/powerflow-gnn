@@ -99,7 +99,9 @@ def test_train_one_epoch_updates_params():
     with torch.no_grad():
         before = next(model.parameters()).clone().cpu()
 
-    loss_avg = train_one_epoch(model, loader, opt, device)
+    results = train_one_epoch(model, loader, opt, device)
+    loss_avg = results["loss"]
+
 
     assert isinstance(loss_avg, float)
     assert math.isfinite(loss_avg)
