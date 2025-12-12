@@ -5,76 +5,134 @@ description = "Powerflow GNN project"
 requires-python = "==3.10.*"
 
 dependencies = [
-    "aiohappyeyeballs==2.6.1",
-    "aiohttp==3.13.2",
-    "aiosignal==1.4.0",
-    "async-timeout==5.0.1",
-    "attrs==25.4.0",
-    "certifi==2025.10.5",
-    "charset-normalizer==3.4.4",
-    "contourpy==1.3.2",
-    "cycler==0.12.1",
-    "filelock==3.20.0",
-    "fonttools==4.60.1",
-    "frozenlist==1.8.0",
-    "fsspec==2025.10.0",
-    "h5py==3.15.1",
-    "idna==3.11",
-    "jinja2==3.1.6",
-    "joblib==1.5.2",
-    "kiwisolver==1.4.9",
-    "markupsafe==3.0.3",
-    "mat73==0.65",
-    "matplotlib==3.10.7",
-    "mpmath==1.3.0",
-    "multidict==6.7.0",
-    "networkx==3.4.2",
-    "numpy==1.26.4",
-    "packaging==25.0",
-    "pillow==12.0.0",
-    "propcache==0.4.1",
-    "psutil==7.1.3",
-    "pyparsing==3.2.5",
-    "python-dateutil==2.9.0.post0",
-    "requests==2.32.5",
-    "scikit-learn==1.7.2",
-    "scipy==1.15.3",
-    "six==1.17.0",
-    "sympy==1.14.0",
-    "threadpoolctl==3.6.0",
-    "torch==2.1.0+cu121",
-    "torch-geometric==2.6.0",
-    "torchaudio==2.1.0+cu121",
-    "torchvision==0.16.0+cu121",
-    "tqdm==4.67.1",
-    "triton==2.1.0; sys_platform == 'linux'",
-    "typing-extensions==4.15.0",
-    "urllib3==2.5.0",
-    "xxhash==3.6.0",
-    "yarl==1.22.0",
-    "pytest==8.4.2",
-    "pyyaml>=6.0.3",
-    "performer-pytorch>=1.1.4",
-    "torch-scatter>=2.1.2",
+  "aiohappyeyeballs==2.6.1",
+  "aiohttp==3.13.2",
+  "aiosignal==1.4.0",
+  "async-timeout==5.0.1",
+  "attrs==25.4.0",
+  "certifi==2025.10.5",
+  "charset-normalizer==3.4.4",
+  "contourpy==1.3.2",
+  "cycler==0.12.1",
+  "filelock==3.20.0",
+  "fonttools==4.60.1",
+  "frozenlist==1.8.0",
+  "fsspec==2025.10.0",
+  "h5py==3.15.1",
+  "idna==3.11",
+  "jinja2==3.1.6",
+  "joblib==1.5.2",
+  "kiwisolver==1.4.9",
+  "markupsafe==3.0.3",
+  "mat73==0.65",
+  "matplotlib==3.10.7",
+  "mpmath==1.3.0",
+  "multidict==6.7.0",
+  "networkx==3.4.2",
+  "numpy==1.26.4",
+  "packaging==25.0",
+  "pillow==12.0.0",
+  "propcache==0.4.1",
+  "psutil==7.1.3",
+  "pyparsing==3.2.5",
+  "python-dateutil==2.9.0.post0",
+  "requests==2.32.5",
+  "scikit-learn==1.7.2",
+  "scipy==1.15.3",
+  "six==1.17.0",
+  "sympy==1.14.0",
+  "threadpoolctl==3.6.0",
+  "tqdm==4.67.1",
+  "typing-extensions==4.15.0",
+  "urllib3==2.5.0",
+  "xxhash==3.6.0",
+  "yarl==1.22.0",
+
+  "pytest==8.4.2",
+  "pyyaml>=6.0.3",
+  "performer-pytorch>=1.1.4",
+
+  # -------------------------
+  # PyTorch (CUDA on Win/Linux, CPU on macOS)
+  # -------------------------
+  "torch==2.1.0+cu121; sys_platform == 'linux' or sys_platform == 'win32'",
+  "torchvision==0.16.0+cu121; sys_platform == 'linux' or sys_platform == 'win32'",
+  "torchaudio==2.1.0+cu121; sys_platform == 'linux' or sys_platform == 'win32'",
+
+  "torch==2.1.0; sys_platform == 'darwin'",
+  "torchvision==0.16.0; sys_platform == 'darwin'",
+  "torchaudio==2.1.0; sys_platform == 'darwin'",
+
+  # -------------------------
+  # PyG
+  # -------------------------
+  "torch-geometric==2.6.0",
+  "torch-scatter>=2.1.2",
+
+  # Triton is Linux-only here (kept explicit)
+  "triton==2.1.0; sys_platform == 'linux'",
 ]
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
 
-find-links = ["https://data.pyg.org/whl/torch-2.1.0+cu121.html"]
-
+# Ask uv to resolve/lock for all three OSes
 environments = [
-    "sys_platform == 'linux'",
-    "sys_platform == 'win32'",
-    "sys_platform == 'darwin'",  # Add macOS
-]
-override-dependencies = [
-    "triton==2.1.0; sys_platform == 'linux'",
+  "sys_platform == 'linux'",
+  "sys_platform == 'win32'",
+  "sys_platform == 'darwin'",
 ]
 
+# If you want to keep a hard override for Linux:
+override-dependencies = [
+  "triton==2.1.0; sys_platform == 'linux'",
+]
+
+# -------------------------
+# Indexes
+# -------------------------
+
+# Default PyPI
 [[tool.uv.index]]
+name = "pypi"
 url = "https://pypi.org/simple"
 default = true
 
+# PyTorch CUDA wheels (Linux/Windows only)
 [[tool.uv.index]]
+name = "pytorch-cu121"
 url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+# PyG wheels published as “flat” HTML pages
+[[tool.uv.index]]
+name = "pyg-cu121"
+url = "https://data.pyg.org/whl/torch-2.1.0+cu121.html"
+format = "flat"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cpu"
+url = "https://data.pyg.org/whl/torch-2.1.0+cpu.html"
+format = "flat"
+explicit = true
+
+# -------------------------
+# Per-package source routing
+# -------------------------
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchaudio = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+# Route torch-scatter to the matching PyG wheel page on each OS
+torch-scatter = [
+  { index = "pyg-cu121", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pyg-cpu", marker = "sys_platform == 'darwin'" },
+]
