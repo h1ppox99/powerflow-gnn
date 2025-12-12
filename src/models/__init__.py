@@ -4,6 +4,7 @@ from .transformer_baseline import TransformerBaseline
 from .transformer_vn import TransformerConvVN
 from .hh_mpnn import HHMPNN, build_model as build_hh_mpnn
 from .hhn_one_attention import HHNOneAttention, build_model as build_hhn_one_attention
+from .graphsage_pi import GraphSAGE_PI
 
 __all__ = [
     "GraphSAGE_PI",
