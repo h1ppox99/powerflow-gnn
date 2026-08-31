@@ -1,5 +1,7 @@
 # Physics-Informed GNN for Optimal Power Flow
 
+See the associated blog post [here](https://medium.com/@hippowal/accelerating-the-grid-enhanced-solving-of-optimal-power-flow-with-graph-neural-networks-4d8a6de2cc59)! 
+
 This project implements physics-informed graph neural networks (GNNs) to improve the accuracy and interpretability of optimal power flow solutions in electrical grids. 
 
 ![Graph representation of the IEEE-118 grid.](./docs/image_heterogeneous_graph.png)
